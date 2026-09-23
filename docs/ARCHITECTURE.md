@@ -1138,6 +1138,13 @@ Heavy/optional deps (`sentence-transformers`, `docker`) live behind extras:
   is not itself mountable by another harness. Ruled out when §999.0 was scoped (2026-09-22):
   the client half is the whole of it. See `docs/BACKLOG.md` § 999.0.
 
+**MCP client conformance (2026-09-22).** The client half of the MCP spec was swept row by row
+against protocol revision `2025-11-25` — the revision agent86's client negotiates. The full
+matrix, with a rating, corpus-exercise record and in/out ruling per capability, is
+`docs/mcp-conformance-matrix.md`; the audit narrative, corpus pins and evidence are
+`docs/mcp-conformance-audit-2026-09.md`. The capabilities ruled *out* there are listed below as
+conformance statements rather than left as silent gaps.
+
 **Described above as design intent, deliberately not implemented yet.** Each is marked *not
 built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 
@@ -1165,3 +1172,21 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 | History *navigation* in the plain loop — stdlib `input()` has no line editor | §12 TUI | BACKLOG § TUI |
 | A read/write split in the sandbox jail, so a skill root granted for reading isn't also writable | §7 tools | BACKLOG § Skills & tools |
 | A `trace show` view of *what* a compaction summarized — the originals are archived, but unreadable from the CLI | §9 observability | BACKLOG § Context & cost |
+| MCP client structured/typed tool output (`CAP-STRUCTURED-OUTPUT`) — `CallToolResult.structured_content` is never read, silently dropped; ADR 0004 leaves this unaddressed pending a future ruling | §7 tools | matrix |
+| MCP client non-text content blocks (`CAP-CONTENT-BLOCKS`) — image/audio/embedded-resource blocks render as a Python repr, not their real payload | §7 tools | matrix; MCP-25 |
+| MCP client resources — list and read (`CAP-RESOURCES`) — no corpus server's primary value depends on it yet | §7 tools | matrix; MCP-14 |
+| MCP client resource templates (`CAP-RESOURCE-TEMPLATES`) — depends on `CAP-RESOURCES` shipping first | §7 tools | matrix; MCP-14 |
+| MCP client resource subscriptions (`CAP-RESOURCE-SUBSCRIBE`) — only the conformance instrument exercises it | §7 tools | matrix; MCP-14 |
+| MCP client prompts — list and get (`CAP-PROMPTS`) — only the conformance instrument exercises it | §7 tools | matrix; MCP-15 |
+| MCP client completion / argument autocomplete (`CAP-COMPLETION`) — depends on `CAP-PROMPTS` shipping first | §7 tools | matrix; MCP-15 |
+| MCP client sampling (`CAP-SAMPLING`) — opt-in per server, deferred until a realistic corpus server demands it | §7 tools | matrix; MCP-16 |
+| MCP client elicitation (`CAP-ELICITATION`) — opt-in per server, deferred pending four preconditions | §7 tools | matrix; MCP-16 |
+| MCP client roots (`CAP-ROOTS`) — correctly declared absent, and the spec itself deprecates the capability in `2026-07-28` | §7 tools | matrix; MCP-16 |
+| MCP client logging (`CAP-LOGGING`) — only the conformance instrument exercises it | §9 observability | matrix |
+| MCP client progress notifications (`CAP-PROGRESS`) — agent86 can trigger a long-running operation but cannot observe its progress | §7 tools | matrix; MCP-24 |
+| MCP client cancellation (`CAP-CANCELLATION`) — no corpus server's workflow depends on it | §7 tools | matrix |
+| MCP client pagination (`CAP-PAGINATION`) — a latent risk, not yet demonstrated by any corpus server | §7 tools | matrix |
+| MCP client `ping` (`CAP-PING`) — no corpus server needs a liveness probe; the transports already fail loudly | §7 tools | matrix |
+| MCP client `list_changed` notifications (`CAP-LIST-CHANGED`) — every server notification is dropped for lack of a `message_handler` | §7 tools | matrix; MCP-24 |
+| MCP client `_meta` on requests, responses and notifications (`CAP-META`) — SDK-internal plumbing, not a client-code gap | §7 tools | matrix |
+| MCP client OAuth 2.0 for remote servers (`CAP-OAUTH`) — auth today is `headers` plus `${VAR}` only; GitHub's hosted server is the named demand signal | §7 tools | matrix; MCP-17 |
