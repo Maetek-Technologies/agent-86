@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-23T03:42:37.644Z"
+last_updated: "2026-09-23T03:50:31.960Z"
 last_activity: 2026-09-23
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 3
+  completed_plans: 4
 ---
 
 # Project State
@@ -54,7 +54,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 10 — MCP Conformance Audit | ◐ | 3/5 | 60% |
+| 10 — MCP Conformance Audit | ◐ | 4/5 | 80% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -64,6 +64,31 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-23 — **Plan 10-04 complete (the 22-row conformance matrix + ARCHITECTURE.md §15, wave
+  3 — the phase's headline deliverable):** `docs/mcp-conformance-matrix.md` created — every
+  `CAP-*` id from `tests/unit/test_docs_consistency.py`'s `_EXPECTED_IDS`, pinned to
+  `Protocol revision: 2025-11-25` (D-01), each row carrying an implemented/partial/absent rating
+  with a file:line citation (every citation independently re-opened and spot-checked against
+  `mcp_client.py` and the installed SDK's `session.py` before being written — none needed
+  correction), an `Exercised by corpus` cell drawn from `docs/mcp-conformance-audit-2026-09.md`'s
+  corpus table and its MCP-07 live-run evidence, and an in/out ruling: **3 implemented**
+  (tools-list, tools-call, transports), **2 partial** (tool-annotations, content-blocks),
+  **17 absent**, **4 ruled in**, **18 ruled out**. `CAP-SAMPLING`/`CAP-ELICITATION` copied
+  verbatim from ADRs 0001/0002, `CAP-STRUCTURED-OUTPUT`/`CAP-CONTENT-BLOCKS` from ADR 0004's
+  Consequences. 12 of the 22 rows are exercised only by `server-everything` (the conformance
+  instrument), 5 by no corpus server at all, and 5 by a realistic or non-instrument corpus member.
+  No `CAP-DISCOVER` row; `2026-07-28` stays unrated. `docs/ARCHITECTURE.md` §15 then gained a
+  new paragraph pointing at the matrix and the audit report, plus 18 new `| Not built | Area |
+  Tracked |` rows, one per out-ruled capability — sections 1-14 verified byte-identical to HEAD via
+  `cmp`, diff is insertions-only (25 lines, 0 deletions). Two auto-fixed deviations, both caught
+  before the first commit: the `Rating` cell for the three "declared absent" rows had to be the
+  bare enum value (`absent`) with the nuance moved to `Reasoning`, not `"absent, and correctly
+  declared absent"` as first drafted (Rule 1); and a duplicate `server/discover` mention had to be
+  reworded to stay under the acceptance criterion's grep bound of 1 (Rule 1). `pytest
+  tests/unit/test_docs_consistency.py --runxfail` passes in full (`7 passed`); the module-scope
+  `xfail` marker was left in place for plan 10-05 to remove. Full suite green: 1242 passed, 14
+  deselected, 7 xpassed, 0 failed. `git status --porcelain src/` empty throughout.
 
 - 2026-09-23 — **Plan 10-03 complete (four contract-touching ADRs, wave 2):** `docs/adr/` created
   — the project's first ADR directory — with a lightweight-MADR convention (`README.md`:
@@ -869,7 +894,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 10 (mcp-conformance-audit) — EXECUTING
-Plan: 4 of 5
+Plan: 5 of 5
 Status: Ready to execute
 Last activity: 2026-09-23
 

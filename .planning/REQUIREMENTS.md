@@ -17,12 +17,12 @@ artifact plus, where stated, a test that pins it.
 
 ### Conformance matrix
 
-- [ ] **MCP-02**: A reader can see, for every client-side MCP spec capability, whether agent86
+- [x] **MCP-02**: A reader can see, for every client-side MCP spec capability, whether agent86
       implements it fully, partially, or not at all — one row per capability, so nothing is missed
       by accident
-- [ ] **MCP-03**: Each matrix row records whether a pinned corpus server exercises that
+- [x] **MCP-03**: Each matrix row records whether a pinned corpus server exercises that
       capability, making the demand ceiling visible rather than asserted
-- [ ] **MCP-04**: Each matrix row carries an in/out ruling with written reasoning, and every
+- [x] **MCP-04**: Each matrix row carries an in/out ruling with written reasoning, and every
       "out" ruling lands in `docs/ARCHITECTURE.md` §15 as a conformance statement — a stated
       non-goal with its reasoning, never a silent gap
 
@@ -125,9 +125,9 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| MCP-02 | Phase 10 | Pending |
-| MCP-03 | Phase 10 | Pending |
-| MCP-04 | Phase 10 | Pending |
+| MCP-02 | Phase 10 | Complete |
+| MCP-03 | Phase 10 | Complete |
+| MCP-04 | Phase 10 | Complete |
 | MCP-05 | Phase 10 | Complete |
 | MCP-06 | Phase 10 | Complete |
 | MCP-07 | Phase 10 | Complete |

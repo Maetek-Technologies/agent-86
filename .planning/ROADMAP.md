@@ -87,7 +87,7 @@ Plans:
   evidence, and rule the nine head-start rows (wave 1)
 - [x] 10-03-PLAN.md — the four contract-touching ADRs: sampling, elicitation, schema deferral,
   result cap (wave 2)
-- [ ] 10-04-PLAN.md — the 22-row conformance matrix pinned to `2025-11-25`, and every "out" ruling
+- [x] 10-04-PLAN.md — the 22-row conformance matrix pinned to `2025-11-25`, and every "out" ruling
   landed in `docs/ARCHITECTURE.md` §15 (wave 3)
 - [ ] 10-05-PLAN.md — the workstream A/B/C phase breakdown, and the consistency check un-xfailed as
   the phase gate (wave 4)
@@ -142,7 +142,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 
