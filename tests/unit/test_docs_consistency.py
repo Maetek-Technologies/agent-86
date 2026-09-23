@@ -9,13 +9,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
-
-# The documents do not exist until plans 10-03/10-04 land them. Remove this marker in plan 10-05.
-pytestmark = pytest.mark.xfail(
-    reason="Wave 0 scaffold - docs land in plans 10-03 and 10-04", strict=False
-)
-
 _ROOT = Path(__file__).resolve().parents[2]
 _MATRIX = _ROOT / "docs" / "mcp-conformance-matrix.md"
 _ARCH = _ROOT / "docs" / "ARCHITECTURE.md"
