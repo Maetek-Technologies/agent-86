@@ -45,6 +45,7 @@ B, C) can be scoped from evidence rather than assumption. **Deliberately one pha
 - [ ] **Phase 10: MCP Conformance Audit** - Produce the client-side conformance matrix, pin the
   five-server corpus (recording versions), and settle the four contract-touching ADRs; audit-only,
   no implementation
+  — **5 plans**, 4 waves
 
 ## Phase Details
 
@@ -77,11 +78,24 @@ MCP-12, MCP-13
      current code (including the suspected `_serve`/`_server_tools` desync, ruled confirmed or
      refuted) and ends with a recommended phase breakdown for workstreams A, B and C that could be
      handed to `/gsd:add-phase` without further research.
-**Plans**: TBD
+**Plans**: 5 plans in 4 waves
+
+Plans:
+- [ ] 10-01-PLAN.md — SEC-04 end-to-end stdio env-scrubbing test plus the Wave 0 cross-document
+  consistency scaffold (wave 1)
+- [ ] 10-02-PLAN.md — pin the five-server corpus, run `server-everything` live for the MCP-07
+  evidence, and rule the nine head-start rows (wave 1)
+- [ ] 10-03-PLAN.md — the four contract-touching ADRs: sampling, elicitation, schema deferral,
+  result cap (wave 2)
+- [ ] 10-04-PLAN.md — the 22-row conformance matrix pinned to `2025-11-25`, and every "out" ruling
+  landed in `docs/ARCHITECTURE.md` §15 (wave 3)
+- [ ] 10-05-PLAN.md — the workstream A/B/C phase breakdown, and the consistency check un-xfailed as
+  the phase gate (wave 4)
 
 ## Next
 
-**v1.1 is planned.** Phase 10 — MCP Conformance Audit — is next: `/gsd:plan-phase 10`. It is
+**v1.1 is planned.** Phase 10 — MCP Conformance Audit — is planned (5 plans, 4 waves) and
+ready to run: `/gsd:execute-phase 10`. It is
 audit-only (no implementation) and produces the conformance matrix, the pinned corpus, and the
 four ADRs described above.
 
