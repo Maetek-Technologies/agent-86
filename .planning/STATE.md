@@ -1,11 +1,11 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Interactive to Release
-status: shipped
+milestone: v1.1
+milestone_name: MCP Integration Depth
+status: defining_requirements
 last_updated: "2026-09-22"
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 9
   total_plans: 30
   completed_plans: 30
@@ -22,22 +22,29 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** v1.0 milestone complete (1/1 phase) — released as v1.0.0. The harness is
-complete against `docs/ARCHITECTURE.md`.
-**Next:** no milestone scoped — a **post-1.0 backlog**, in `docs/BACKLOG.md`. Top of it is
-**MCP integration work** (§ 999.0), which outranks everything else and was **scoped
-2026-09-22**: three workstreams (client depth, remote auth, context & lifecycle), MCP server mode
-ruled a non-goal, and phase **999.0a** — the conformance audit + ADRs — ready to promote. Added 2026-09-22: seven **competitive gaps** (phases 999.1–999.7 in
+**Current focus:** **v1.1 — MCP integration depth**, started 2026-09-22, defining requirements.
+Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
+deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
+ADRs. v1.0 shipped as v1.0.0 and the harness remains complete against `docs/ARCHITECTURE.md`.
+**Next:** phases 11+ are **deliberately unwritten** — `docs/BACKLOG.md` § 999.0 rules that
+999.0b–d are written only after the matrix is ruled on. Workstreams **A** (client depth), **B**
+(remote auth), **C** (context & lifecycle) are recorded as deferred requirements and get phased
+via `/gsd:add-phase` from the audit's evidence; MCP server mode stays a non-goal. Audit evidence
+suggests C > A > B in size. Behind all of it: seven **competitive gaps** (phases 999.1–999.7 in
 `ROADMAP.md` § Backlog), ordered `grep`/`glob` → tool hooks → declarative sub-agents → plan-mode
 gate, then git awareness / shell network control / injection classifier unordered. None outranks
 MCP integration work.
 
 ## Milestone
 
-**v1.0 — Release** (agent86 now at v1.0.0)
-1 phase | 9 requirements (OBS-01…OBS-04, PKG-01, PKG-02, HARD-01…HARD-03) | 1 phase complete
+**v1.1 — MCP integration depth** (in progress; defining requirements)
+1 phase (Phase 10 — MCP conformance audit) | requirements being defined | 0 phases complete
 
-Previous: **v0.9 — Coding-agent UX** — 1 phase, 8 requirements, complete, released as v0.9.0.
+Deliberately one phase: A/B/C cannot be sized until the matrix rules on them.
+
+Previous: **v1.0 — Release** — 1 phase, 9 requirements (OBS-01…OBS-04, PKG-01, PKG-02,
+HARD-01…HARD-03), complete, released as v1.0.0.
+Before that: **v0.9 — Coding-agent UX** — 1 phase, 8 requirements, complete, released as v0.9.0.
 Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released as v0.8.0;
 **v0.7 — Trustworthy harness** — 1 phase, 8 requirements, released as v0.7.0; and
 **v0.6 — Interactive** — 5 phases, 10 requirements, released as v0.6.0.
@@ -46,8 +53,9 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 9 — Release | ● | n/a | 100% |
+| 10 — MCP Conformance Audit | ○ | not yet planned | 0% |
 
+v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
 v0.8 (closed): 7 — Context & Cost ● n/a.
 v0.7 (closed): 6 — Trustworthy Harness ● n/a.
@@ -814,31 +822,44 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   still say "agentic harness" — they describe the package and the prompt, not the splash, and
   were deliberately left. Full suite green: **1241 passed**, 14 deselected; ruff and mypy clean.
 
+## Current Position
+
+Phase: **10 — MCP Conformance Audit** (not started)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-09-22 — Milestone v1.1 (MCP integration depth) started
+
 ## Next Step
 
-The v1.0 "Release" milestone is complete and shipped as **v1.0.0** — 1/1 phase, 9/9 requirements
-(OBS-01…OBS-04, PKG-01, PKG-02, HARD-01…HARD-03) Complete. Every v1.0 candidate recorded at the
-close of v0.9 shipped, and `docs/ARCHITECTURE.md` §15 no longer lists anything the contract
-specifies as built.
+**Milestone v1.1 — MCP integration depth** opened 2026-09-22, promoting backlog phase **999.0a**
+as **Phase 10**. The v1.0 "Release" milestone remains complete and shipped as **v1.0.0** — 1/1
+phase, 9/9 requirements (OBS-01…OBS-04, PKG-01, PKG-02, HARD-01…HARD-03), and
+`docs/ARCHITECTURE.md` §15 lists nothing the contract specifies as built.
 
-**The orchestrator tags the release**: `python scripts/check_release.py --tag v1.0.0` passes, and
-the tag push is what runs `release.yml` (pre-flight → build → `twine check` → packaging tests →
-trusted publishing → GitHub Release). Procedure and one-time trusted-publisher setup:
-`docs/RELEASING.md`. Nothing in this repository is tagged or pushed by the docs pass.
+**Phase 10 is audit-only — no implementation.** Three deliverables: the client-side conformance
+matrix, the pinned corpus (`server-everything`, `server-filesystem`, `mcp-server-git`,
+`tests/integration/live_mcp_server.py` extended to echo its environment, and GitHub's hosted
+remote server), and at minimum four ADRs — sampling as an inversion of control, elicitation as a
+Tier 1 phishing surface, schema deferral against the prompt contract, and where the result cap
+lives. **Start from the nine grounded matrix rows** in `docs/BACKLOG.md` § 999.0 "Audit head
+start", not from the spec; one of them is a likely defect to confirm before fixing (`_serve`'s
+`finally` pops `self._sessions[name]` but leaves `self._server_tools[name]` populated, while
+`call_tool` indexes `self._sessions[server]`).
 
-**No next milestone is scoped** — v1.0 closed the programme, and what follows is a backlog rather
-than a plan. Nearest item at the time of writing was the `Development Status` classifier flip,
-**done in `06ca3a4` (2026-09-21)**; the backlog was re-read on 2026-09-22 and its top is now
-**MCP integration work** (phase 999.0, scope TBD), ahead of the seven competitive gaps
-(999.1–999.7).
+**Phases 11+ are deliberately unwritten.** Workstreams A (client depth), B (remote auth) and C
+(context & lifecycle) are deferred requirements, not phases, until the matrix rules on them —
+`docs/BACKLOG.md` § 999.0. MCP server mode is a written non-goal. Standing constraints for the
+whole programme: the `mcp` extra stays optional with graceful degradation, `run --json` keys are
+additive-only, no new core dependencies, and the cold-start budget holds.
 
-Outstanding (non-blocking): what v0.9 opened, now in `docs/BACKLOG.md` § TUI / § "Skills & tools" —
-click-to-toggle tool blocks (needs a widget-based transcript, since a `RichLog` can't host
-children), history *navigation* in the plain loop (needs `readline`), and the sandbox jail's
-missing read/write split, which makes a skill root granted for *reading* writable too. Plus the
-v0.7 review leftovers in `docs/BACKLOG.md` § "v0.7 review leftovers" (`web_fetch` approval gating,
-a `/cost` breakdown by turn, `test_mcp_live`) and the older deferred list in the same file. Still
-carried from v0.6: manual Windows Terminal verification per `03-VALIDATION.md` §Manual-Only
-(real keyring round-trip, real `config.toml` comment preservation, live OpenRouter/Groq catalog
-schema check, a real turn against a cloud model) and of the full `/config mcp` flow against a
-real MCP server.
+Outstanding (non-blocking, carried): what v0.9 opened, now in `docs/BACKLOG.md` § TUI §
+"Skills & tools" — click-to-toggle tool blocks (needs a widget-based transcript, since a `RichLog`
+can't host children), history *navigation* in the plain loop (needs `readline`), and the sandbox
+jail's missing read/write split, which makes a skill root granted for *reading* writable too. Plus
+the v0.7 review leftovers in `docs/BACKLOG.md` § "v0.7 review leftovers" (`web_fetch` approval
+gating, a `/cost` breakdown by turn, `test_mcp_live`) and the older deferred list in the same file.
+Still carried from v0.6: manual Windows Terminal verification per `03-VALIDATION.md`
+§Manual-Only (real keyring round-trip, real `config.toml` comment preservation, live
+OpenRouter/Groq catalog schema check, a real turn against a cloud model) and of the full
+`/config mcp` flow against a real MCP server — **the last of those is now partly scheduled by
+Phase 10**, which exercises `/config mcp` against the pinned corpus.

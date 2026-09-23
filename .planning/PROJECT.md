@@ -1,4 +1,4 @@
-# agent86 — Release Milestone (v1.0)
+# agent86 — MCP Integration Depth (v1.1)
 
 ## Current State
 
@@ -17,11 +17,41 @@ Textual TUI or from the plain loop and `agent86 run --json`, which remain the sc
   flipped to `5 - Production/Stable` in `06ca3a4`, so the corrected classifier reaches PyPI with
   the next release. Post-1.0 candidates live in `docs/BACKLOG.md`.
 
-## Next Milestone Goals
+## Current Milestone: v1.1 MCP integration depth
 
-None scoped — the harness is complete against `docs/ARCHITECTURE.md`. What follows is a backlog,
-not a programme; the candidates and their reasoning are in **Next milestone candidates** below and
-in `docs/BACKLOG.md`. Start one with `/gsd:new-milestone`, which gathers fresh requirements.
+**Goal:** Rule on the client half of the MCP spec — produce the conformance matrix, pin the server
+corpus, and settle the four contract-touching decisions — so the implementation phases can be
+scoped from evidence rather than assumption.
+
+**Target features:**
+
+- **The conformance matrix** — every client-side spec capability × {implemented / partial /
+  absent} × {exercised by corpus / not} × {in / out, with reasoning}. Anything the spec defines
+  and no corpus server exercises becomes a written non-goal *with* its reasoning, in
+  `docs/ARCHITECTURE.md` §15 — a conformance statement, not a silent gap.
+- **The pinned corpus** — `server-everything`, `server-filesystem`, `mcp-server-git`,
+  `tests/integration/live_mcp_server.py` extended to echo its own environment (pinning SEC-04
+  end-to-end), and GitHub's hosted remote server for the auth workstream. Pinned by version.
+- **Four ADRs, at minimum** — sampling as an inversion of control (third-party spend inside our
+  turn); elicitation as a Tier 1 surface (a server prompting our user is a phishing vector);
+  schema deferral changing the prompt contract (it interacts with `allowed-tools` gating and
+  `context_budget`'s fixed overhead); and where the result cap lives (`_content_to_text` joins
+  uncapped today).
+
+**Deliberately one phase.** The programme has three workstreams — **A** client depth (resources
+and prompts first-class; sampling / elicitation / roots audited, not assumed), **B** remote auth
+(OAuth 2.0 discovery, authorization, refresh, tokens in the existing keyring), and **C** context
+and lifecycle (schema deferral, per-server timeouts, result caps, reconnect, `list_changed`) —
+but `docs/BACKLOG.md` § 999.0 rules that phases 999.0b–d "are written only after the matrix is
+ruled on." A/B/C are therefore recorded as deferred requirements and become phases 11+ via
+`/gsd:add-phase` once the audit lands. Audit evidence suggests **C is larger than A, and
+materially larger than B** — worth knowing before those phases are sized.
+
+**Driver is conformance; the ceiling is demand.** The spec is the measuring stick, so nothing is
+missed by accident. The corpus is the trigger: a feature ships when a corpus server exercises it.
+
+**Non-goal, unchanged:** MCP server mode. agent86 stays a client and does not become mountable by
+other harnesses — recorded in `docs/ARCHITECTURE.md` §15 so the slot is not reopened by inference.
 
 ## What This Is
 
@@ -290,8 +320,8 @@ without hand-editing TOML or restarting.
 
 <!-- This milestone. Hypotheses until shipped. -->
 
-_None — all 10 v0.6, all 8 v0.7, all 7 v0.8, all 8 v0.9 and all 9 v1.0 requirements validated;
-v1.0 shipped as v1.0.0 on 2026-09-21._
+_Being defined for v1.1 — see `.planning/REQUIREMENTS.md`. All 10 v0.6, all 8 v0.7, all 7 v0.8,
+all 8 v0.9 and all 9 v1.0 requirements are validated; v1.0 shipped as v1.0.0 on 2026-09-21._
 
 ### Out of Scope
 
@@ -387,15 +417,16 @@ v1.0 shipped as v1.0.0 on 2026-09-21._
 ## Next milestone candidates
 
 Every v1.0 candidate shipped. v0.6 made the harness usable, v0.7 made it honest, v0.8 made it
-frugal, v0.9 made it a coding agent, and v1.0 shipped it — the harness is now complete against
-`docs/ARCHITECTURE.md`, so there is **no next milestone scoped**: what follows is a backlog, not a
-programme.
+frugal, v0.9 made it a coding agent, and v1.0 shipped it — the harness is complete against
+`docs/ARCHITECTURE.md`. **v1.1 is now scoped** (MCP integration depth, above); what follows *it*
+is still a backlog rather than a programme.
 
 Post-1.0, in `docs/BACKLOG.md`:
 
 - ~~**Development Status classifier flip**~~ — done in `06ca3a4` (2026-09-21)
-- **MCP integration work** — top priority above everything below, scope not yet written down
-  (`docs/BACKLOG.md` § 999.0)
+- ~~**MCP integration work, scope not yet written down**~~ — scoped 2026-09-22
+  (`docs/BACKLOG.md` § 999.0) and promoted as **v1.1**; its phase 10 is the conformance audit,
+  with workstreams A/B/C to be phased from the matrix
 - **Seven competitive gaps** — `grep`/`glob`, tool hooks, declarative sub-agents, a plan-mode
   gate, git awareness, shell network control, an injection classifier (`docs/BACKLOG.md`
   § "Competitive gaps 2026-09-22"; phases 999.1–999.7)
@@ -430,4 +461,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-22 after the v1.0 milestone.*
+*Last updated: 2026-09-22 — v1.1 (MCP integration depth) started.*
