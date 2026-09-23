@@ -23,6 +23,21 @@ Textual TUI or from the plain loop and `agent86 run --json`, which remain the sc
 corpus, and settle the four contract-touching decisions — so the implementation phases can be
 scoped from evidence rather than assumption.
 
+**Phase 10 complete (2026-09-23)** — the milestone's only planned phase is done, and the ruling
+exists. `docs/mcp-conformance-matrix.md` rates 22 client-side capabilities against protocol
+revision `2025-11-25` (3 implemented, 2 partial, 17 absent; 4 ruled in, 18 ruled out), and all 18
+out-rulings are stated non-goals in `docs/ARCHITECTURE.md` §15 rather than silent gaps. The
+five-server corpus is pinned in `docs/mcp-conformance-audit-2026-09.md`, which also records a live
+`server-everything` run, confirms all nine BACKLOG head-start rows against current code, and ends
+with 7 proposed phases placing every deferred requirement MCP-14…MCP-26. The four contract-touching
+decisions are ruled in `docs/adr/0001`–`0004` — the project's first ADRs. SEC-04 is now pinned
+end-to-end by a network-free CI test, and a docs-consistency test keeps the matrix, §15 and the
+ADRs from drifting apart. Nothing under `src/` changed: the audit was audit-only by design, and the
+confirmed `_serve`/`_server_tools` zombie-tool desync was recorded and routed to MCP-26, not fixed.
+
+Next: `/gsd:add-phase` once per proposed phase — `docs/BACKLOG.md` § 999.0's precondition for
+writing phases 999.0b–d is now satisfied.
+
 **Target features:**
 
 - **The conformance matrix** — every client-side spec capability × {implemented / partial /
@@ -465,4 +480,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-22 — v1.1 (MCP integration depth) started.*
+*Last updated: 2026-09-23 — Phase 10 (MCP Conformance Audit) complete; the matrix is ruled.*
