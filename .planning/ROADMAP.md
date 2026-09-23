@@ -81,9 +81,9 @@ MCP-12, MCP-13
 **Plans**: 5 plans in 4 waves
 
 Plans:
-- [ ] 10-01-PLAN.md — SEC-04 end-to-end stdio env-scrubbing test plus the Wave 0 cross-document
+- [x] 10-01-PLAN.md — SEC-04 end-to-end stdio env-scrubbing test plus the Wave 0 cross-document
   consistency scaffold (wave 1)
-- [ ] 10-02-PLAN.md — pin the five-server corpus, run `server-everything` live for the MCP-07
+- [x] 10-02-PLAN.md — pin the five-server corpus, run `server-everything` live for the MCP-07
   evidence, and rule the nine head-start rows (wave 1)
 - [ ] 10-03-PLAN.md — the four contract-touching ADRs: sampling, elicitation, schema deferral,
   result cap (wave 2)
@@ -142,7 +142,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 0 plans (superseded by Phase 10's own plans, TBD)
+**Plans:** 2/5 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 

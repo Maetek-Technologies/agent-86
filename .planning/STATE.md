@@ -2,13 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: defining_requirements
-last_updated: "2026-09-22"
+status: executing
+last_updated: "2026-09-23T03:34:49.227Z"
+last_activity: 2026-09-23
 progress:
-  total_phases: 10
-  completed_phases: 9
-  total_plans: 30
-  completed_plans: 30
+  total_phases: 1
+  completed_phases: 0
+  total_plans: 5
+  completed_plans: 1
 ---
 
 # Project State
@@ -22,7 +23,7 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** **v1.1 — MCP integration depth**, started 2026-09-22, defining requirements.
+**Current focus:** Phase 10 — mcp-conformance-audit
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
 ADRs. v1.0 shipped as v1.0.0 and the harness remains complete against `docs/ARCHITECTURE.md`.
@@ -824,10 +825,10 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: **10 — MCP Conformance Audit** (not started)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-09-22 — Milestone v1.1 (MCP integration depth) started
+Phase: 10 (mcp-conformance-audit) — EXECUTING
+Plan: 2 of 5
+Status: Ready to execute
+Last activity: 2026-09-23
 
 ## Next Step
 

@@ -28,14 +28,14 @@ artifact plus, where stated, a test that pins it.
 
 ### Pinned corpus
 
-- [ ] **MCP-05**: The audit runs against a corpus of five servers recorded by version —
+- [x] **MCP-05**: The audit runs against a corpus of five servers recorded by version —
       `@modelcontextprotocol/server-everything`, `@modelcontextprotocol/server-filesystem`,
       `mcp-server-git`, `tests/integration/live_mcp_server.py`, and GitHub's hosted remote MCP
       server — so the same versions can be re-run later
 - [ ] **MCP-06**: `tests/integration/live_mcp_server.py` echoes its own environment, pinning
       SEC-04 (stdio servers get `SandboxPolicy.scrubbed_env()`, not the host environment)
       end-to-end in CI, locally and with no network
-- [ ] **MCP-07**: The audit determines whether `server-everything` drives sampling, elicitation
+- [x] **MCP-07**: The audit determines whether `server-everything` drives sampling, elicitation
       and progress — the answer deciding whether those three are demand-triggered or stay written
       non-goals. This is the first audit task, because it gates MCP-08 and MCP-09
 
@@ -59,7 +59,7 @@ artifact plus, where stated, a test that pins it.
 
 ### Evidence and sizing
 
-- [ ] **MCP-12**: Each of the nine matrix rows already grounded by the BACKLOG audit head start is
+- [x] **MCP-12**: Each of the nine matrix rows already grounded by the BACKLOG audit head start is
       confirmed or corrected against the current code — including the suspected defect in
       `_serve`, whose `finally` pops `self._sessions[name]` but leaves `self._server_tools[name]`
       populated while `call_tool` indexes `self._sessions[server]`. Confirmed before any fix is
@@ -128,14 +128,14 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-02 | Phase 10 | Pending |
 | MCP-03 | Phase 10 | Pending |
 | MCP-04 | Phase 10 | Pending |
-| MCP-05 | Phase 10 | Pending |
+| MCP-05 | Phase 10 | Complete |
 | MCP-06 | Phase 10 | Pending |
-| MCP-07 | Phase 10 | Pending |
+| MCP-07 | Phase 10 | Complete |
 | MCP-08 | Phase 10 | Pending |
 | MCP-09 | Phase 10 | Pending |
 | MCP-10 | Phase 10 | Pending |
 | MCP-11 | Phase 10 | Pending |
-| MCP-12 | Phase 10 | Pending |
+| MCP-12 | Phase 10 | Complete |
 | MCP-13 | Phase 10 | Pending |
 
 **Coverage:**
