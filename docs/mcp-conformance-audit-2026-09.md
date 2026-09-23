@@ -150,7 +150,61 @@ this run completed.
 
 ## The nine head-start rows, ruled
 
-_(filled by task 2 of this plan)_
+The nine rows below come verbatim from `docs/BACKLOG.md` § 999.0a's "Audit head start", found by
+reading `tools/mcp_client.py` on 2026-09-22. Each is ruled **CONFIRMED** or **CORRECTED** here
+against the code as of `a30a2bb` — every cited line was re-opened and re-read during this task,
+not copied from 10-RESEARCH.md's earlier pass, and every citation below still resolves to the
+claim it supports. Per **MCP-12**, this phase proposes, it does not fix: every confirmed defect is
+routed into the workstream breakdown (plan 10-05) rather than patched here, and
+`src/agent86/tools/mcp_client.py` is untouched by this plan.
+
+| # | Head-start claim | Ruling | Evidence (file:line) | Routed to |
+| --- | --- | --- | --- | --- |
+| 1 | `ClientSession(read, write)` is built with no callbacks — sampling, elicitation and roots are structurally absent, not merely uncalled. Any one of them is a constructor change. **Refinement confirmed against code:** the absence is *declared*, not silent — `_build_capabilities()` sets `sampling`/`elicitation`/`roots` to `None` whenever the SDK's default callback is still installed, so agent86 already tells servers "not supported" at `initialize()` time. That is protocol-correct behaviour, not a latent defect. | CONFIRMED | `mcp_client.py:219`, `session.py:371-380`, `session.py:591-608` | MCP-16 (workstream A), ADRs 0001/0002 |
+| 2 | `initialize()` → `list_tools()` and nothing else — no `list_resources`, `read_resource`, `list_prompts`, `get_prompt`. | CONFIRMED | `mcp_client.py:220-221` | MCP-14, MCP-15 (workstream A) |
+| 3 | No `message_handler`, so every server notification is dropped. | CONFIRMED | `mcp_client.py:219`, SDK default `_default_message_handler` is `await anyio.lowlevel.checkpoint()` at `session.py:212-213` | MCP-24 (workstream C) |
+| 4 | Timeouts hardcoded and asymmetric — 30 s connect, 120 s per tool call; `MCPConfig` carries only `enabled`. | CONFIRMED | `mcp_client.py:166`, `mcp_client.py:295`, `config.py:293-294` | MCP-21 (workstream C) |
+| 5 | `_content_to_text` applies no size cap. **Scope note confirmed against code:** `CallToolResult.structured_content` is never read either (`mcp_types/_types.py:1474`), so the gap is not only "uncapped" but also "silently dropped". | CONFIRMED | `mcp_client.py:426-434` | MCP-22 (workstream C), ADR 0004 |
+| 6 | Only `.text` content is read; image, audio and embedded-resource blocks fall through to `str(chunk)`. | CONFIRMED | `mcp_client.py:429-430` | MCP-25 (workstream C) |
+| 7 | **The `_serve`/`_server_tools` desync.** `mcp_client.py:234` sets `self._server_tools[name] = tools`; the `finally` at `mcp_client.py:241-242` pops only `self._sessions[name]`; `stop_server()` at `mcp_client.py:244-260` *does* pop `self._server_tools` (line 248) but that is the user-initiated path, not the death path; `call_tool()` at `mcp_client.py:286-289` indexes `self._sessions`; `tools_for()`/`tools()` at `mcp_client.py:262-266` read `self._server_tools`. | CONFIRMED | `mcp_client.py:234`, `mcp_client.py:241-242`, `mcp_client.py:244-260`, `mcp_client.py:286-289`, `mcp_client.py:262-266` | MCP-26 (workstream C) |
+| 8 | No reconnect path — `_serve` awaits `close_event`; a dropped transport ends the task. | CONFIRMED | `mcp_client.py:237`, and the absence of any retry loop anywhere in `_serve` | MCP-23 (workstream C) |
+| 9 | Auth is `headers` plus `${VAR}` only — no discovery, no refresh, no token storage. | CONFIRMED | `_resolve_server_secrets`, `mcp_client.py:336-358` | MCP-17, MCP-18 (workstream B) |
+
+### Row 7 in detail — the zombie-tool defect
+
+This is the one row the requirement singles out by name ("including the suspected defect in
+`_serve`"), so it gets a dedicated explanation rather than a single table cell. The defect fires
+only under one precise condition: a server's owning task exits through the `except BaseException`
+path at `mcp_client.py:238-240` *after* `ready` has already resolved — that is, the server died
+mid-session, having already connected and listed its tools successfully, not at connect time.
+Before `ready` resolves, a failure there sets `ready`'s exception and `start_server` raises to the
+caller, so no zombie state is possible on the connect path; the defect is specific to a live
+server dying later. When that happens, the `finally` block at `mcp_client.py:241-242` pops the
+dead session out of `self._sessions`, but `self._server_tools[name]` — set once, at
+`mcp_client.py:234`, on successful connect — is never touched by that `finally`. `stop_server()`
+does clean up `self._server_tools` (`mcp_client.py:248`), but that is the *user-initiated* removal
+path; a server that dies on its own never goes through `stop_server()`.
+
+The practical consequence: `tools_for()`/`tools()` (`mcp_client.py:262-266`) keep reading from
+`self._server_tools`, so the dead server's tools remain listed as callable in the registry — the
+model still sees them, and the compiled system prompt still advertises them, exactly as if the
+server were healthy. But `call_tool()` (`mcp_client.py:286-289`) checks membership in
+`self._sessions`, which the `finally` block already emptied for that server, so every call through
+one of those tools raises `RuntimeError("MCP session not available")` instead of the tool simply
+disappearing. The model is left calling a tool it can no longer successfully use, receiving a
+generic runtime error rather than an actionable "server X died, its tools are gone" signal it
+could reason about or route around. This is precisely a **zombie-tool** bug — the registry entry
+outlives the connection it depends on — not a crash: the harness itself keeps running, the turn
+keeps going, and only the specific tool calls into the dead server fail, repeatedly, with no
+self-correcting information. Per MCP-12, **no fix is made in this phase** — it is routed to
+deferred requirement MCP-26 and sized in the workstream breakdown (plan 10-05).
+
+**Distribution across workstreams.** Of the nine rows, counting each once by its primary routing
+column above: **2 route to workstream A** (rows 1 and 2), **1 routes to workstream B** (row 9),
+and **6 route to workstream C** (rows 3, 4, 5, 6, 7, 8). That lopsided 6-of-9 weight toward
+workstream C is additional, independent evidence — on top of BACKLOG's own prior observation —
+that **C is the largest of the three workstreams**; this section does not state a final sizing
+conclusion, that synthesis is plan 10-05's job.
 
 ## Recommended phase breakdown — workstreams A, B and C
 
