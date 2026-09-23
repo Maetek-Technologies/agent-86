@@ -153,7 +153,7 @@ by volume.
 **Plans:** 0 plans
 
 Plans:
-- [ ] TBD (write after Phase 10 lands)
+- [x] TBD (write after Phase 10 lands) (completed 2026-09-23)
 
 ### Phase 999.1: Codebase intelligence — `grep` / `glob` built-in tools (BACKLOG)
 
