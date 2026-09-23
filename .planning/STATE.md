@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: executing
-last_updated: "2026-09-23T03:50:31.960Z"
+status: verifying
+last_updated: "2026-09-23T04:03:37.243Z"
 last_activity: 2026-09-23
 progress:
   total_phases: 1
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 5
-  completed_plans: 4
+  completed_plans: 5
 ---
 
 # Project State
@@ -23,18 +23,27 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 10 — mcp-conformance-audit
+**Current focus:** Phase 10 — mcp-conformance-audit, complete, awaiting verification/milestone
+close.
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
 ADRs. v1.0 shipped as v1.0.0 and the harness remains complete against `docs/ARCHITECTURE.md`.
+Phase 10 is now 5/5 plans complete: the matrix (10-04), the four ADRs (10-03), the pinned corpus
+and SEC-04 stdio proof (10-01/10-02), and the MCP-13 workstream A/B/C phase breakdown plus the
+un-xfailed docs-consistency phase gate (10-05).
 **Next:** phases 11+ are **deliberately unwritten** — `docs/BACKLOG.md` § 999.0 rules that
-999.0b–d are written only after the matrix is ruled on. Workstreams **A** (client depth), **B**
-(remote auth), **C** (context & lifecycle) are recorded as deferred requirements and get phased
-via `/gsd:add-phase` from the audit's evidence; MCP server mode stays a non-goal. Audit evidence
-suggests C > A > B in size. Behind all of it: seven **competitive gaps** (phases 999.1–999.7 in
-`ROADMAP.md` § Backlog), ordered `grep`/`glob` → tool hooks → declarative sub-agents → plan-mode
-gate, then git awareness / shell network control / injection classifier unordered. None outranks
-MCP integration work.
+999.0b–d are written only after the matrix is ruled on. That precondition is now satisfied. Plan
+10-05 proposed 7 phases across workstreams **A** (client depth, 2 phases, MCP-14/15/16), **B**
+(remote auth, 2 phases, MCP-17/18/19) and **C** (context & lifecycle, 3 phases, MCP-20..26),
+ready to be written via `/gsd:add-phase`; MCP server mode stays a non-goal. Sizing counts:
+by head-start findings and deferred-requirement count, C (6 findings / 7 reqs) is larger than A
+(2 findings / 3 reqs) and materially larger than B (1 finding / 3 reqs), confirming the standing
+hypothesis; by raw matrix-row count A (9 rows) is actually larger than C (7 rows), a correction.
+The `2026-07-28` modern-protocol adoption question is recorded as a new, unlisted workstream
+candidate, not folded into A/B/C. Behind all of it: seven **competitive gaps** (phases 999.1–999.7
+in `ROADMAP.md` § Backlog), ordered `grep`/`glob` → tool hooks → declarative sub-agents →
+plan-mode gate, then git awareness / shell network control / injection classifier unordered. None
+outranks MCP integration work.
 
 ## Milestone
 
@@ -54,7 +63,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 10 — MCP Conformance Audit | ◐ | 4/5 | 80% |
+| 10 — MCP Conformance Audit | ● | 5/5 | 100% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -64,6 +73,32 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-23 — **Plan 10-05 complete (workstream A/B/C phase breakdown + phase gate, wave 4 —
+  final plan, Phase 10 now 5/5 complete, MCP-13 closed):** `docs/mcp-conformance-audit-2026-09.md`
+  gained its final section — a `Sizing:` line computed three independent ways (matrix rows, head-
+  start findings, deferred-requirement count) and 7 proposed phases (Phases 11-17: workstream A ×2
+  MCP-14/15/16, workstream B ×2 MCP-17/18/19, workstream C ×3 MCP-20..26), each with all eight
+  required labels (Workstream/Goal/Depends on/Requirements/Matrix rows closed/Success
+  Criteria/Sizing signal/Risk-constraint) and every deferred requirement MCP-14 through MCP-26
+  placed in exactly one phase. Sizing confirmed the standing "C is larger than A, materially
+  larger than B" hypothesis on findings (C=6 vs A=2) and requirement count (C=7 vs A=3), but
+  corrected it on raw matrix-row count (A=9 vs C=7) — reported rather than asserted. The
+  `2026-07-28` modern-protocol adoption question (10-RESEARCH.md's Open Question 1) is routed to a
+  named "Candidate findings outside the three workstreams" subsection as its own workstream
+  candidate, not folded into A/B/C. `tests/unit/test_docs_consistency.py`'s Wave 0
+  `pytestmark = pytest.mark.xfail(...)` scaffold was deleted — all 7 tests now pass unmarked — and
+  proven to actually catch a violation via a deliberate break-and-restore: `CAP-TRANSPORTS`'s
+  ruling was flipped `in` → `out`, the suite went red with the exact expected assertion message,
+  the file was restored via a plain edit, the suite went green again, and `git diff
+  docs/mcp-conformance-matrix.md` confirmed empty. Phase gate: `pytest -q` 1249 passed (up from
+  1242 passed/7 xpassed), 0 failed, 0 xfailed/xpassed; `ruff check .` and `mypy src/agent86` both
+  clean. One logged-not-fixed deviation: `ruff format --check .` fails on 74 pre-existing files
+  (last touched 2026-09-19/21, before this phase) unrelated to this plan's own files — recorded in
+  the new `deferred-items.md` rather than mass-reformatted out of scope. `git status --porcelain
+  src/` empty throughout — this plan, like the rest of Phase 10, implemented nothing.
+  `docs/BACKLOG.md` § 999.0's "phases 999.0b–d are written only after the matrix is ruled on"
+  precondition is now satisfied; next step is `/gsd:add-phase` once per proposed phase.
 
 - 2026-09-23 — **Plan 10-04 complete (the 22-row conformance matrix + ARCHITECTURE.md §15, wave
   3 — the phase's headline deliverable):** `docs/mcp-conformance-matrix.md` created — every
@@ -895,7 +930,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 Phase: 10 (mcp-conformance-audit) — EXECUTING
 Plan: 5 of 5
-Status: Ready to execute
+Status: Phase complete — ready for verification
 Last activity: 2026-09-23
 
 ## Next Step

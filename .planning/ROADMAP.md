@@ -42,7 +42,7 @@ server corpus, and the four contract-touching ADRs — so the implementation pha
 B, C) can be scoped from evidence rather than assumption. **Deliberately one phase**: `docs/BACKLOG.md`
 § 999.0 rules that phases 999.0b–d "are written only after the matrix is ruled on."
 
-- [ ] **Phase 10: MCP Conformance Audit** - Produce the client-side conformance matrix, pin the
+- [x] **Phase 10: MCP Conformance Audit** - Produce the client-side conformance matrix, pin the (completed 2026-09-23)
   five-server corpus (recording versions), and settle the four contract-touching ADRs; audit-only,
   no implementation
   — **5 plans**, 4 waves
@@ -89,7 +89,7 @@ Plans:
   result cap (wave 2)
 - [x] 10-04-PLAN.md — the 22-row conformance matrix pinned to `2025-11-25`, and every "out" ruling
   landed in `docs/ARCHITECTURE.md` §15 (wave 3)
-- [ ] 10-05-PLAN.md — the workstream A/B/C phase breakdown, and the consistency check un-xfailed as
+- [x] 10-05-PLAN.md — the workstream A/B/C phase breakdown, and the consistency check un-xfailed as
   the phase gate (wave 4)
 
 ## Next
@@ -142,7 +142,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 4/5 plans executed
+**Plans:** 5/5 plans complete
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 

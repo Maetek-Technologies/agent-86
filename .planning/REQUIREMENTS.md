@@ -64,7 +64,7 @@ artifact plus, where stated, a test that pins it.
       `_serve`, whose `finally` pops `self._sessions[name]` but leaves `self._server_tools[name]`
       populated while `call_tool` indexes `self._sessions[server]`. Confirmed before any fix is
       proposed; this phase proposes, it does not fix
-- [ ] **MCP-13**: The audit outputs a recommended phase breakdown for workstreams A, B and C
+- [x] **MCP-13**: The audit outputs a recommended phase breakdown for workstreams A, B and C
       derived from the matrix, so phases 11+ can be written. Audit evidence already suggests
       **C is larger than A, and materially larger than B**
 
@@ -136,7 +136,7 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-10 | Phase 10 | Complete |
 | MCP-11 | Phase 10 | Complete |
 | MCP-12 | Phase 10 | Complete |
-| MCP-13 | Phase 10 | Pending |
+| MCP-13 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 12 total
