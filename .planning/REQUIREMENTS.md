@@ -32,7 +32,7 @@ artifact plus, where stated, a test that pins it.
       `@modelcontextprotocol/server-everything`, `@modelcontextprotocol/server-filesystem`,
       `mcp-server-git`, `tests/integration/live_mcp_server.py`, and GitHub's hosted remote MCP
       server — so the same versions can be re-run later
-- [ ] **MCP-06**: `tests/integration/live_mcp_server.py` echoes its own environment, pinning
+- [x] **MCP-06**: `tests/integration/live_mcp_server.py` echoes its own environment, pinning
       SEC-04 (stdio servers get `SandboxPolicy.scrubbed_env()`, not the host environment)
       end-to-end in CI, locally and with no network
 - [x] **MCP-07**: The audit determines whether `server-everything` drives sampling, elicitation
@@ -129,7 +129,7 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-03 | Phase 10 | Pending |
 | MCP-04 | Phase 10 | Pending |
 | MCP-05 | Phase 10 | Complete |
-| MCP-06 | Phase 10 | Pending |
+| MCP-06 | Phase 10 | Complete |
 | MCP-07 | Phase 10 | Complete |
 | MCP-08 | Phase 10 | Pending |
 | MCP-09 | Phase 10 | Pending |

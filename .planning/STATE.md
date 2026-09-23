@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-23T03:34:49.227Z"
+last_updated: "2026-09-23T03:35:28.064Z"
 last_activity: 2026-09-23
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 1
+  completed_plans: 2
 ---
 
 # Project State
@@ -64,6 +64,21 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-23 — **Plan 10-01 complete (SEC-04 stdio proof + docs-consistency Wave 0 scaffold,
+  parallel wave 1):** `tests/integration/live_mcp_server.py` gains a third tool, `get_env`,
+  echoing `dict(os.environ)`; `test_stdio_server_gets_scrubbed_env` in
+  `tests/integration/test_mcp_client.py` drives a real stdio subprocess through `MCPManager` with
+  two host-only secrets set, asserting neither name nor value crosses the boundary while the
+  allowlisted `PATH` does — MCP-06 closed end-to-end, not just by unit test. A deviation:
+  `live_mcp_server.py` is shared across stdio/http/sse, so the new tool also broke
+  `test_mcp_live.py`'s exact tool-name-set assertion; widened to include `mcp__live__get_env`
+  (Rule 1 auto-fix). `tests/unit/test_docs_consistency.py` (new) is the written contract for
+  plans 10-03/10-04 — 7 tests, module-scope `xfail(strict=False)`, pinning the 22 `CAP-*`
+  capability IDs, the six-column matrix table shape, the `ARCHITECTURE.md` §15 cross-reference
+  for "out" rulings, and the four-ADR (`Context`/`Decision`/`Consequences`/`**Ruling:**`)
+  requirement. Full suite green: 1242 passed, 14 deselected, 7 xfailed, 0 failed; `git status
+  --porcelain src/` empty (audit-only scope honored).
 
 - 2026-09-21 — **Phase 9 (Release) complete; v1.0 milestone complete at 1/1 phase and released as
   v1.0.0.** Executed as a review-driven pass (see `phases/09-release/SUMMARY.md` for the
@@ -826,7 +841,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 10 (mcp-conformance-audit) — EXECUTING
-Plan: 2 of 5
+Plan: 3 of 5
 Status: Ready to execute
 Last activity: 2026-09-23
 
