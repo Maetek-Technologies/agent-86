@@ -6,8 +6,11 @@
 src/agent86`).
 
 **What's wrong:** `ruff format --check .` (ruff 0.15.21) reports 74 files "would be reformatted"
-— all under `tests/tui/` and `tests/unit/`. None of them are files this phase (or plan 10-05)
-touched: `tests/unit/test_docs_consistency.py` (this plan's only owned test file) is correctly
+— spread across `src/agent86/` (32 files, `mcp_client.py` among them), `tests/tui/` and
+`tests/unit/`. (An earlier draft of this note said the 74 were all under `tests/` — that was
+wrong, and phase verification caught it; the substantive claim below is unaffected, since the
+`src/` failures were independently confirmed to predate Phase 10 too.) None of them are files
+this phase (or plan 10-05) touched: `tests/unit/test_docs_consistency.py` (this plan's only owned test file) is correctly
 formatted and not in the list. `ruff check .` (lint) exits 0 clean — this is a formatter-only
 finding, not a lint violation.
 
