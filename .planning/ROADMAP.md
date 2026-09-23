@@ -7,7 +7,7 @@
 - **v0.8 Context & Cost** — Phase 7 — shipped 2026-09-19
 - **v0.9 Coding-Agent UX** — Phase 8 — shipped 2026-09-21
 - **v1.0 Release** — Phase 9 — shipped 2026-09-21, published to PyPI
-- **v1.1 MCP Integration Depth** — Phase 10 — in progress (started 2026-09-22)
+- **v1.1 MCP Integration Depth** — Phases 10-11 — in progress (started 2026-09-22)
 
 Full detail for v0.6-v1.0: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) ·
 requirements: [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) ·
@@ -39,13 +39,21 @@ GSD plans; each still carries a `SUMMARY.md` in `phases/`.
 
 **Milestone Goal:** Rule on the client half of the MCP spec — the conformance matrix, the pinned
 server corpus, and the four contract-touching ADRs — so the implementation phases (workstreams A,
-B, C) can be scoped from evidence rather than assumption. **Deliberately one phase**: `docs/BACKLOG.md`
-§ 999.0 rules that phases 999.0b–d "are written only after the matrix is ruled on."
+B, C) can be scoped from evidence rather than assumption, then build them. Phase 10 was
+**deliberately the only phase at milestone start**: `docs/BACKLOG.md` § 999.0 rules that phases
+999.0b–d "are written only after the matrix is ruled on." That matrix landed 2026-09-23, so the
+implementation phases are now written from its recommended breakdown
+([../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown"), one at a time.
 
-- [x] **Phase 10: MCP Conformance Audit** - Produce the client-side conformance matrix, pin the (completed 2026-09-23)
+- [x] **Phase 10: MCP Conformance Audit** - Produce the client-side conformance matrix, pin the (completed 2026-09-23)
   five-server corpus (recording versions), and settle the four contract-touching ADRs; audit-only,
   no implementation
   — **5 plans**, 4 waves
+- [ ] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` /
+  `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
+  MCP-14 and MCP-15
+  — **not planned yet**
 
 ## Phase Details
 
@@ -92,17 +100,50 @@ Plans:
 - [x] 10-05-PLAN.md — the workstream A/B/C phase breakdown, and the consistency check un-xfailed as
   the phase gate (wave 4)
 
+#### Phase 11: Resources and prompts become first-class
+**Workstream**: A
+**Goal**: A model connected through agent86 can list and read any mounted server's resources, and
+list/get its prompts — with argument-completion suggestions where the server supports them — with
+the same round-trip fidelity tool calls already have.
+**Depends on**: Phase 10 only
+**Requirements**: MCP-14, MCP-15
+**Matrix rows closed**: CAP-RESOURCES, CAP-RESOURCE-TEMPLATES, CAP-RESOURCE-SUBSCRIBE (the
+`subscribe_resource` call site only — the update notification itself is closed by the proposed
+schema-deferral/notification phase), CAP-PROMPTS, CAP-COMPLETION
+**Success Criteria** (what must be TRUE):
+  1. Connected to `@modelcontextprotocol/server-filesystem`, a model-issued tool call round-trips a
+     real `list_resources` → `read_resource` pair and the file content reaches the model.
+  2. Connected to `server-everything`, `list_prompts`/`get_prompt` return its 3 prompts, and
+     `complete()` returns suggestions for the `completable` argument one of them exposes.
+  3. A follow-up matrix re-audit moves `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES`/`CAP-PROMPTS`/
+     `CAP-COMPLETION` from `absent` to `implemented` in `docs/mcp-conformance-matrix.md`.
+**Risk / constraint**: none of the four standing constraints are strained directly — this is
+additive client surface, no new core dependency, and any new tool-result content flowing through
+`run --json` is additive-only; the `mcp` extra stays optional throughout.
+**Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown" → Proposed Phase 11
+**Plans**: not planned yet
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 11 to break down)
+
 ## Next
 
-**v1.1 is planned.** Phase 10 — MCP Conformance Audit — is planned (5 plans, 4 waves) and
-ready to run: `/gsd:execute-phase 10`. It is
-audit-only (no implementation) and produces the conformance matrix, the pinned corpus, and the
-four ADRs described above.
+**Phase 10 — MCP Conformance Audit — is complete** (5/5 plans, 2026-09-23). The conformance
+matrix, the pinned five-server corpus, and the four contract-touching ADRs are landed, and the
+audit ends with a ruled phase breakdown for workstreams A, B and C.
 
-Phases 11+ are **deliberately unwritten**: `docs/BACKLOG.md` § 999.0 rules that phases 999.0b–d
-(workstream A client depth, B remote auth, C context & lifecycle) are written only after Phase
-10's matrix is ruled on, via `/gsd:add-phase`. Audit evidence already suggests **C is larger than
-A, and materially larger than B**.
+**Phase 11 — Resources and prompts become first-class — is added and not yet planned**:
+`/gsd:plan-phase 11`. It is the first of that breakdown (workstream A, requirements MCP-14 and
+MCP-15) and depends on Phase 10 only.
+
+Phases 12+ remain **unwritten by design** and are promoted one at a time from the audit's
+recommended breakdown via `/gsd:add-phase`: sampling/elicitation/roots as an opt-in per-server
+surface (A), OAuth discovery/authorization and token refresh against GitHub's hosted server (B),
+and the zombie-tool desync, reconnect, timeouts/result cap/non-text content, and schema
+deferral/notification handling (C). Sizing, corrected by the audit: **C is larger than A on
+findings and deferred requirements, and materially larger than B on every metric**; A leads only
+on raw matrix-row count (9 vs 7).
 
 Behind all of it, and outranked by MCP integration work per the standing constraint below: the
 seven **competitive gaps** in § Backlog below (phases 999.1–999.7) — `grep`/`glob` built-ins, tool
@@ -153,7 +194,7 @@ by volume.
 **Plans:** 0 plans
 
 Plans:
-- [x] TBD (write after Phase 10 lands) (completed 2026-09-23)
+- [x] TBD (write after Phase 10 lands) (completed 2026-09-23)
 
 ### Phase 999.1: Codebase intelligence — `grep` / `glob` built-in tools (BACKLOG)
 

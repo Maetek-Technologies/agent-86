@@ -47,10 +47,13 @@ outranks MCP integration work.
 
 ## Milestone
 
-**v1.1 — MCP integration depth** (in progress; defining requirements)
-1 phase (Phase 10 — MCP conformance audit) | requirements being defined | 0 phases complete
+**v1.1 — MCP integration depth** (in progress)
+2 phases (Phase 10 — MCP conformance audit; Phase 11 — resources and prompts become first-class)
+| 1 phase complete
 
-Deliberately one phase: A/B/C cannot be sized until the matrix rules on them.
+Phase 10 was deliberately the only phase at milestone start: A/B/C could not be sized until the
+matrix ruled on them. It ruled 2026-09-23, so the implementation phases are now promoted one at a
+time from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown".
 
 Previous: **v1.0 — Release** — 1 phase, 9 requirements (OBS-01…OBS-04, PKG-01, PKG-02,
 HARD-01…HARD-03), complete, released as v1.0.0.
@@ -64,6 +67,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
+| 11 — Resources and Prompts First-Class | ○ | 0/0 | 0% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -926,11 +930,20 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   still say "agentic harness" — they describe the package and the prompt, not the splash, and
   were deliberately left. Full suite green: **1241 passed**, 14 deselected; ruff and mypy clean.
 
+## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 11 added: Resources and prompts become first-class — workstream A (MCP-14, MCP-15),
+  promoted 2026-09-23 from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown"
+  (Proposed Phase 11) once Phase 10's matrix was ruled on. Phases 12+ of that breakdown stay
+  unwritten and are promoted one at a time.
+
 ## Current Position
 
-Phase: 10
+Phase: 11
 Plan: Not started
-Status: Phase complete — ready for verification
+Status: Phase added, not planned — run `/gsd:plan-phase 11`
 Last activity: 2026-09-23
 
 ## Next Step
@@ -950,11 +963,21 @@ start", not from the spec; one of them is a likely defect to confirm before fixi
 `finally` pops `self._sessions[name]` but leaves `self._server_tools[name]` populated, while
 `call_tool` indexes `self._sessions[server]`).
 
-**Phases 11+ are deliberately unwritten.** Workstreams A (client depth), B (remote auth) and C
-(context & lifecycle) are deferred requirements, not phases, until the matrix rules on them —
-`docs/BACKLOG.md` § 999.0. MCP server mode is a written non-goal. Standing constraints for the
-whole programme: the `mcp` extra stays optional with graceful degradation, `run --json` keys are
-additive-only, no new core dependencies, and the cold-start budget holds.
+**Phase 11 — Resources and prompts become first-class — is added and awaiting a plan**
+(`/gsd:plan-phase 11`). It is the first phase of the audit's recommended breakdown: workstream A,
+requirements MCP-14 and MCP-15, depends on Phase 10 only. Goal — a model connected through agent86
+can `list_resources`/`read_resource` against `server-filesystem` and `list_prompts`/`get_prompt`/
+`complete` against `server-everything`, with the same round-trip fidelity tool calls already have.
+Today there are zero call sites for any of the five (`mcp_client.py:220-221`).
+
+**Phases 12+ stay unwritten** and are promoted one at a time from
+`docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown": sampling/elicitation/roots
+as an opt-in per-server surface (A), OAuth discovery/authorization and token refresh against
+GitHub's hosted server (B), and the zombie-tool desync + reconnect, per-server timeouts/result
+cap/non-text content, and schema deferral + notification handling (C). MCP server mode is a written
+non-goal. Standing constraints for the whole programme: the `mcp` extra stays optional with graceful
+degradation, `run --json` keys are additive-only, no new core dependencies, and the cold-start
+budget holds.
 
 Outstanding (non-blocking, carried): what v0.9 opened, now in `docs/BACKLOG.md` § TUI §
 "Skills & tools" — click-to-toggle tool blocks (needs a widget-based transcript, since a `RichLog`
