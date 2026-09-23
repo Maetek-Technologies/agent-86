@@ -6,6 +6,7 @@ build_mcp degradation paths — the previously thin `tools/mcp_client.py`.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -87,7 +88,7 @@ def test_per_server_start_lists_real_tools():
     manager = MCPManager({})
     try:
         tools = manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
-        assert {t._tool for t in tools} == {"add", "shout"}
+        assert {t._tool for t in tools} == {"add", "shout", "get_env"}
         assert all(t.name.startswith("mcp__alpha__") for t in tools)
     finally:
         manager.close()
@@ -161,3 +162,29 @@ def test_start_server_failure_does_not_break_manager():
         manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
     finally:
         manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_stdio_server_gets_scrubbed_env(monkeypatch):
+    """SEC-04, end to end: the stdio subprocess gets scrubbed_env(), not os.environ.
+
+    Asserted only by unit test until now (`stdio_env()` returns the right dict); this drives a
+    real subprocess over a real stdio transport and reads back what it actually received.
+    """
+    monkeypatch.setenv("AGENT86_TEST_HOST_SECRET", "leaked-if-you-see-this")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-not-a-real-key")
+    manager = MCPManager({})
+    try:
+        manager.start_server("envsrv", _stdio_cfg(), timeout=30.0)
+        raw = manager.call_tool("envsrv", "get_env", {})
+    finally:
+        manager.close()
+
+    # Negative: neither the name nor the value of a host-only variable crosses the boundary.
+    assert "AGENT86_TEST_HOST_SECRET" not in raw
+    assert "leaked-if-you-see-this" not in raw
+    assert "ANTHROPIC_API_KEY" not in raw
+    assert "sk-ant-not-a-real-key" not in raw
+    # Positive: the allowlist actually arrived, so the assertion above is not vacuous.
+    env = json.loads(raw)
+    assert "PATH" in env
