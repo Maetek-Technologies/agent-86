@@ -1,0 +1,96 @@
+---
+phase: 11
+slug: resources-and-prompts-become-first-class
+status: draft
+nyquist_compliant: false
+wave_0_complete: false
+created: 2026-09-23
+---
+
+# Phase 11 — Validation Strategy
+
+> Per-phase validation contract for feedback sampling during execution.
+> Derived from `11-RESEARCH.md` § "Validation Architecture".
+
+---
+
+## Test Infrastructure
+
+| Property | Value |
+|----------|-------|
+| **Framework** | pytest 8.2+ / pytest-asyncio 0.23+ (`pyproject.toml:59`), `asyncio_mode = "auto"` (`pyproject.toml:119`) |
+| **Config file** | `pyproject.toml` `[tool.pytest.ini_options]` (no separate `pytest.ini`) |
+| **Quick run command** | `pytest tests/unit/test_mcp.py tests/integration/test_mcp_client.py -q` |
+| **Full suite command** | `pytest -q` (default `addopts = "-m 'not packaging'"` excludes the slow packaging suite) |
+| **Estimated runtime** | ~20 seconds quick / ~120 seconds full |
+
+**Skip pattern (MANDATORY for new live-stdio tests):** module-level
+`try: import mcp.server.mcpserver; _HAS_MCP_SERVER = True; except ImportError: _HAS_MCP_SERVER = False`,
+then `@pytest.mark.skipif(not _HAS_MCP_SERVER, ...)` per real-transport test. Never a bare
+module-scope `pytest.importorskip` — that would also skip the mock-only tests in the same file.
+
+---
+
+## Sampling Rate
+
+- **After every task commit:** Run `pytest tests/unit/test_mcp.py tests/integration/test_mcp_client.py -q`
+- **After every plan wave:** Run `pytest -q`
+- **Before `/gsd:verify-work`:** Full suite must be green, plus both manual live-evidence runs
+  (SC1 against `server-filesystem`, SC2 against `server-everything`) recorded below
+- **Max feedback latency:** 20 seconds
+
+---
+
+## Per-Task Verification Map
+
+| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
+|---------|------|------|-------------|-----------|-------------------|-------------|--------|
+| TBD | TBD | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ❌ W0 — extend `live_mcp_server.py` with `.resource()` / `.prompt()` / `.completion()` | ⬜ pending |
+| TBD | TBD | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ❌ W0 — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ⬜ pending |
+| TBD | TBD | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ❌ W0 dep | ⬜ pending |
+| TBD | TBD | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ❌ W0 dep | ⬜ pending |
+| TBD | TBD | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ❌ W0 dep | ⬜ pending |
+| TBD | TBD | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k prompt -q` | ❌ W0 dep | ⬜ pending |
+| TBD | TBD | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k complete -q` | ❌ W0 dep | ⬜ pending |
+| TBD | TBD | 2 | SC3 (docs) | docs | `pytest tests/unit/test_docs_consistency.py -q` | ✅ exists (enforces matrix *shape*, not rating) | ⬜ pending |
+
+*Task IDs are filled by the planner; the rows above are the required verification surface.*
+*Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+---
+
+## Wave 0 Requirements
+
+- [ ] `tests/integration/live_mcp_server.py` — add a `.resource()`-decorated resource, a
+      `.prompt()`-decorated prompt (with at least one completable-style argument), and a
+      `.completion()` handler, so CI exercises resources/prompts/completion without network or
+      `npx` (mirrors the `add`/`shout`/`get_env` tools added for SEC-04 in plan 10-01)
+- [ ] `tests/unit/test_mcp.py` — a fake `ServerCapabilities`-bearing session fixture (extending
+      `_install_fake_transport`) so capability-gated registration is unit-testable without a real
+      server
+- [ ] Framework install: **none** — the `mcp` extra is already a dev/test dependency
+      (`pyproject.toml:59,62`)
+
+---
+
+## Manual-Only Verifications
+
+| Behavior | Requirement | Why Manual | Test Instructions |
+|----------|-------------|------------|-------------------|
+| Real `list_resources` → `read_resource` round-trip against `@modelcontextprotocol/server-filesystem`, file content reaching the model | Roadmap SC1 | Phase 10 ruling D-03: CI must stay network-free and `npx`-free | Scratchpad script, same pattern as the MCP-07 run in `docs/mcp-conformance-audit-2026-09.md`; paste transcript evidence into the phase artifact |
+| `list_prompts`/`get_prompt` return `server-everything`'s 3 prompts; `complete()` returns suggestions for its `completable` argument | Roadmap SC2 | Same as SC1 | Scratchpad script against pinned `server-everything@2026.8.31`; record real prompt name + argument name as evidence |
+| Four matrix rows ruled `absent` → `implemented` | Roadmap SC3 | The *rating* is a human/plan judgement; only the matrix shape is machine-checked | Edit `docs/mcp-conformance-matrix.md` only after the full suite is green and both evidence runs above are recorded |
+
+---
+
+## Validation Sign-Off
+
+- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
+- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
+- [ ] Wave 0 covers all MISSING references (`live_mcp_server.py` fixtures, fake capabilities session)
+- [ ] No watch-mode flags
+- [ ] Feedback latency < 20s
+- [ ] Both manual live-evidence runs (SC1, SC2) recorded before the matrix is edited
+- [ ] `nyquist_compliant: true` set in frontmatter
+
+**Approval:** pending
