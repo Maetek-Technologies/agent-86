@@ -1,9 +1,9 @@
 ---
 phase: 10
 slug: mcp-conformance-audit
-status: draft
-nyquist_compliant: false
-wave_0_complete: false
+status: ready
+nyquist_compliant: true
+wave_0_complete: false  # 10-01 is the Wave-0-equivalent plan (wave 1)
 created: 2026-09-22
 ---
 
@@ -42,22 +42,20 @@ created: 2026-09-22
 
 ## Per-Task Verification Map
 
-Task IDs are assigned by the planner; rows are keyed on requirement until then.
+Plans exist; rows below carry their real plan and wave assignments.
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | TBD | MCP-02 | doc check | `pytest tests/unit/test_docs_consistency.py -q` (row set matches research capability enumeration) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-03 | doc check | same test — asserts every matrix row has a non-empty corpus-exercised column | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-04 | grep assertion | same test — every "out"-ruled capability name appears in `docs/ARCHITECTURE.md` §15 | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-05 | doc check | manual review — five servers named with exact versions | N/A | ⬜ pending |
-| TBD | TBD | TBD | MCP-06 | **integration test** | `pytest tests/integration/test_mcp_client.py -q -k scrubbed_env` | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-07 | doc check + live run | manual review of audit evidence; optional `npx -y @modelcontextprotocol/server-everything@2026.8.31` run (not committed) | N/A | ⬜ pending |
-| TBD | TBD | TBD | MCP-08 | doc check | same test — ADR file exists with a Decision heading (sampling as inversion of control) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-09 | doc check | same test — ADR exists (elicitation as a Tier 1 surface) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-10 | doc check | same test — ADR exists (schema deferral vs. the prompt contract) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-11 | doc check | same test — ADR exists (where the result cap lives) | ❌ W0 | ⬜ pending |
-| TBD | TBD | TBD | MCP-12 | doc check | manual review — nine head-start rows each ruled confirmed/corrected with file:line evidence | N/A | ⬜ pending |
-| TBD | TBD | TBD | MCP-13 | doc check | manual review — workstream A/B/C phase breakdown present and `/gsd:add-phase`-ready | N/A | ⬜ pending |
+| 10-01-01 | 10-01 | 1 | MCP-06 | **integration test** | `pytest tests/integration/test_mcp_client.py -q -k scrubbed_env` | ❌ W0 | ⬜ pending |
+| 10-01-02 | 10-01 | 1 | MCP-02, MCP-03, MCP-04, MCP-08…11 | doc check (xfail scaffold) | `pytest tests/unit/test_docs_consistency.py -q` → 7 xfailed | ❌ W0 | ⬜ pending |
+| 10-02-01 | 10-02 | 1 | MCP-05, MCP-07 | doc check + live run | `grep -c "api.githubcopilot.com/mcp/" docs/mcp-conformance-audit-2026-09.md` | ❌ W0 | ⬜ pending |
+| 10-02-02 | 10-02 | 1 | MCP-12 | doc check | nine head-start rows ruled, each with a file:line citation | ❌ W0 | ⬜ pending |
+| 10-03-01 | 10-03 | 2 | MCP-08, MCP-09 | doc check | `pytest tests/unit/test_docs_consistency.py --runxfail -q -k adr` | ❌ W0 | ⬜ pending |
+| 10-03-02 | 10-03 | 2 | MCP-10, MCP-11 | doc check | `pytest tests/unit/test_docs_consistency.py --runxfail -q -k adr` | ❌ W0 | ⬜ pending |
+| 10-04-01 | 10-04 | 3 | MCP-02, MCP-03 | doc check | `pytest tests/unit/test_docs_consistency.py --runxfail -q` (22 rows, 6 columns, `2025-11-25` pin) | ❌ W0 | ⬜ pending |
+| 10-04-02 | 10-04 | 3 | MCP-04 | grep assertion | `pytest tests/unit/test_docs_consistency.py --runxfail -q` (every `out` ruling present in ARCHITECTURE.md §15) | ❌ W0 | ⬜ pending |
+| 10-05-01 | 10-05 | 4 | MCP-13 | doc check | `grep -c "#### Proposed Phase" docs/mcp-conformance-audit-2026-09.md` | ❌ W0 | ⬜ pending |
+| 10-05-02 | 10-05 | 4 | MCP-02, MCP-03, MCP-04 | **gate** | `pytest tests/unit/test_docs_consistency.py -q` → 7 passed, 0 xfail markers remain | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -65,14 +63,16 @@ Task IDs are assigned by the planner; rows are keyed on requirement until then.
 
 ## Wave 0 Requirements
 
-- [ ] `docs/mcp-conformance-matrix.md` — does not exist; create from the Client-Side MCP Spec
+All five are owned by planned tasks; `10-01` (wave 1) is the Wave-0-equivalent plan.
+
+- [ ] `docs/mcp-conformance-matrix.md` — owned by `10-04`; — does not exist; create from the Client-Side MCP Spec
       Surface table in `10-RESEARCH.md` as the row skeleton
-- [ ] `docs/adr/` — does not exist; create, with the four ADR files (MCP-08..MCP-11)
-- [ ] `tests/unit/test_docs_consistency.py` — does not exist; the cross-document check backing
+- [ ] `docs/adr/` — owned by `10-03`; does not exist; create, with the four ADR files (MCP-08..MCP-11)
+- [ ] `tests/unit/test_docs_consistency.py` — owned by `10-01` Task 2 (xfail scaffold) and un-xfailed by `10-05` Task 2; does not exist; the cross-document check backing
       MCP-02, MCP-03, MCP-04 and MCP-08..MCP-11 (reads both docs, asserts cross-references resolve)
-- [ ] New SEC-04 end-to-end test in `tests/integration/test_mcp_client.py` — reuse the existing
+- [ ] New SEC-04 end-to-end test in `tests/integration/test_mcp_client.py` — owned by `10-01` Task 1; reuse the existing
       `_stdio_cfg`, `MCPManager` and `_HAS_MCP_SERVER` scaffolding in that file; do not duplicate it
-- [ ] An environment-echoing tool added to `tests/integration/live_mcp_server.py`
+- [ ] An environment-echoing tool (`get_env`) added to `tests/integration/live_mcp_server.py` — owned by `10-01` Task 1
 
 ---
 
@@ -80,8 +80,8 @@ Task IDs are assigned by the planner; rows are keyed on requirement until then.
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Five corpus servers named with exact versions | MCP-05 | Versions are static facts in prose, not runtime-checkable; GitHub's hosted server has no installable version | Read the audit report's corpus table; confirm five rows, each with a version or an endpoint + observation date |
-| `server-everything` drives sampling, elicitation, progress | MCP-07 | Evidence-gathering, not a CI-pinned assertion; a committed test would add a network/npx dependency | Read the audit report's evidence section; confirm it cites `server-everything`'s tool names (`trigger-sampling-request`, `trigger-elicitation-request`, `trigger-long-running-operation`) |
+| Five corpus servers named with exact versions | MCP-05 | Versions are static facts in prose, not runtime-checkable; GitHub's hosted server has no installable version and is pinned by endpoint + observation date (locked decision D-02) | Read the audit report's corpus table; confirm five rows, each with a version or an endpoint + observation date |
+| `server-everything` drives sampling, elicitation, progress | MCP-07 | Evidence-gathering, not a CI-pinned assertion; a committed test would add a network/npx dependency (locked decision D-03) | Read the audit report's MCP-07 section; confirm it records the exact `npx -y @modelcontextprotocol/server-everything@<version>` command that was run live, the tool list agent86 actually received with its count, and the present/absent breakdown of all sixteen tool names |
 | Nine head-start rows confirmed or corrected | MCP-12 | Judgement over evidence, not a mechanical check | Read the audit report's table; each of the nine rows carries a confirmed/corrected ruling with a file:line citation |
 | Workstream A/B/C phase breakdown | MCP-13 | Quality of a recommendation is not machine-checkable | Confirm each proposed phase has a goal, requirements and success criteria sufficient for `/gsd:add-phase` without further research |
 
@@ -89,11 +89,11 @@ Task IDs are assigned by the planner; rows are keyed on requirement until then.
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 5s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies — all 10 tasks carry one
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references — no task uses the `MISSING` sentinel
+- [x] No watch-mode flags
+- [x] Feedback latency < 5s
+- [x] `nyquist_compliant: true` set in frontmatter
 
-**Approval:** pending
+**Approval:** approved 2026-09-22 (plans verified by gsd-plan-checker: 0 blockers)
