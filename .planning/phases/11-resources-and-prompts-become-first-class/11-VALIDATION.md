@@ -1,10 +1,11 @@
 ---
 phase: 11
 slug: resources-and-prompts-become-first-class
-status: draft
+status: planned
 nyquist_compliant: false
 wave_0_complete: false
 created: 2026-09-23
+planned: 2026-09-23
 ---
 
 # Phase 11 — Validation Strategy
@@ -43,19 +44,28 @@ module-scope `pytest.importorskip` — that would also skip the mock-only tests 
 
 ## Per-Task Verification Map
 
+Wave numbers below are the *validation* waves the research named (0 = fixtures). The frontmatter
+`wave:` on each PLAN is offset by one, matching Phase 10's precedent — plan 11-01 carries the
+Wave 0 work at `wave: 1`.
+
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| TBD | TBD | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ❌ W0 — extend `live_mcp_server.py` with `.resource()` / `.prompt()` / `.completion()` | ⬜ pending |
-| TBD | TBD | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ❌ W0 — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ⬜ pending |
-| TBD | TBD | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ❌ W0 dep | ⬜ pending |
-| TBD | TBD | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ❌ W0 dep | ⬜ pending |
-| TBD | TBD | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ❌ W0 dep | ⬜ pending |
-| TBD | TBD | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k prompt -q` | ❌ W0 dep | ⬜ pending |
-| TBD | TBD | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k complete -q` | ❌ W0 dep | ⬜ pending |
-| TBD | TBD | 2 | SC3 (docs) | docs | `pytest tests/unit/test_docs_consistency.py -q` | ✅ exists (enforces matrix *shape*, not rating) | ⬜ pending |
+| 11-01 T1 | 11-01 | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ❌ W0 — extend `live_mcp_server.py` with `.resource()` / `.prompt()` / `.completion()` | ⬜ pending |
+| 11-01 T2 | 11-01 | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ❌ W0 — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ⬜ pending |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k prompt -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k complete -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | unit | `pytest tests/unit/test_mcp.py -k prompts_capability -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
+| 11-04 T2 | 11-04 | 2 | SC3 (docs) | docs | `pytest tests/unit/test_docs_consistency.py -q` | ✅ exists (enforces matrix *shape*, not rating) | ⬜ pending |
 
-*Task IDs are filled by the planner; the rows above are the required verification surface.*
+*Task IDs filled by the planner 2026-09-23; the rows above are the required verification surface.*
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
+
+Implementation tasks with no row of their own (11-02 T1/T2, 11-03 T1/T2) each carry
+`<automated>pytest tests/unit/test_mcp.py -q</automated>` in their own plan, so sampling
+continuity holds: no three consecutive tasks run without an automated verify.
 
 ---
 
@@ -71,15 +81,22 @@ module-scope `pytest.importorskip` — that would also skip the mock-only tests 
 - [ ] Framework install: **none** — the `mcp` extra is already a dev/test dependency
       (`pyproject.toml:59,62`)
 
+**Planner note (2026-09-23):** an `MCPServer`-hosted fixture declares `resources.subscribe = False`
+and cannot be made to declare it `True` — the high-level server never registers a
+`resources/subscribe` handler. The `subscribe_resource` / `unsubscribe_resource` call sites are
+therefore covered by the fake session, not the live fixture. Verified by running the proposed
+fixture code during planning: `resources={'subscribe': False, 'list_changed': False}`,
+`prompts={'list_changed': False}`, `completions={}`.
+
 ---
 
 ## Manual-Only Verifications
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Real `list_resources` → `read_resource` round-trip against `@modelcontextprotocol/server-filesystem`, file content reaching the model | Roadmap SC1 | Phase 10 ruling D-03: CI must stay network-free and `npx`-free | Scratchpad script, same pattern as the MCP-07 run in `docs/mcp-conformance-audit-2026-09.md`; paste transcript evidence into the phase artifact |
-| `list_prompts`/`get_prompt` return `server-everything`'s 3 prompts; `complete()` returns suggestions for its `completable` argument | Roadmap SC2 | Same as SC1 | Scratchpad script against pinned `server-everything@2026.8.31`; record real prompt name + argument name as evidence |
-| Four matrix rows ruled `absent` → `implemented` | Roadmap SC3 | The *rating* is a human/plan judgement; only the matrix shape is machine-checked | Edit `docs/mcp-conformance-matrix.md` only after the full suite is green and both evidence runs above are recorded |
+| Real `list_resources` → `read_resource` round-trip against `@modelcontextprotocol/server-filesystem`, file content reaching the model | Roadmap SC1 | Phase 10 ruling D-03: CI must stay network-free and `npx`-free | Scratchpad script, same pattern as the MCP-07 run in `docs/mcp-conformance-audit-2026-09.md`; transcript recorded in `11-EVIDENCE.md` by plan 11-04 Task 1 |
+| `list_prompts`/`get_prompt` return `server-everything`'s 3 prompts; `complete()` returns suggestions for its `completable` argument | Roadmap SC2 | Same as SC1 | Scratchpad script against pinned `server-everything@2026.8.31` (re-verified 2026-09-23 via `npm view`); record real prompt name + argument name in `11-EVIDENCE.md` |
+| Four matrix rows ruled `absent` → `implemented` | Roadmap SC3 | The *rating* is a human/plan judgement; only the matrix shape is machine-checked | Plan 11-04 Task 2 edits `docs/mcp-conformance-matrix.md` only after the full suite is green and both evidence runs above are recorded |
 
 ---
 

@@ -53,7 +53,7 @@ implementation phases are now written from its recommended breakdown
 - [ ] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` /
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
-  — **not planned yet**
+  — **4 plans**, 4 waves
 
 ## Phase Details
 
@@ -122,10 +122,17 @@ additive client surface, no new core dependency, and any new tool-result content
 `run --json` is additive-only; the `mcp` extra stays optional throughout.
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 11
-**Plans**: not planned yet
+**Plans**: 4 plans in 4 waves
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 11 to break down)
+- [ ] 11-01-PLAN.md — the Wave 0 fixtures: resources/prompt/completion on the CI-safe live MCP
+  server, and a capability-aware fake session for unit tests (wave 1)
+- [ ] 11-02-PLAN.md — resources become first-class (MCP-14): the capability-gated seam,
+  list/read/templates plus subscribe/unsubscribe, and the never-inlined blob (wave 2)
+- [ ] 11-03-PLAN.md — prompts and argument completion become first-class (MCP-15): list/get
+  prompts and `complete`, on the same seam (wave 3)
+- [ ] 11-04-PLAN.md — the two live-evidence runs, and the conformance matrix / ARCHITECTURE §15 /
+  README / CHANGELOG re-ruling (wave 4)
 
 ## Next
 
@@ -133,9 +140,15 @@ Plans:
 matrix, the pinned five-server corpus, and the four contract-touching ADRs are landed, and the
 audit ends with a ruled phase breakdown for workstreams A, B and C.
 
-**Phase 11 — Resources and prompts become first-class — is added and not yet planned**:
-`/gsd:plan-phase 11`. It is the first of that breakdown (workstream A, requirements MCP-14 and
-MCP-15) and depends on Phase 10 only.
+**Phase 11 — Resources and prompts become first-class — is planned**: 4 plans in 4 waves,
+`/gsd:execute-phase 11`. It is the first of that breakdown (workstream A, requirements MCP-14 and
+MCP-15) and depends on Phase 10 only. Three open questions the research left were resolved at plan
+time: `unsubscribe_resource` ships alongside `subscribe_resource` (the roadmap's "call site only"
+scopes out the *notification*, MCP-24, not the release verb); the real `server-everything` prompt
+and completable-argument names are gathered by an explicit evidence task rather than guessed, and
+never hardcoded into a CI test; and `subscribe_resource`/`unsubscribe_resource` are
+`side_effecting = True` while every read is not. `CAP-RESOURCE-SUBSCRIBE` therefore lands at
+`partial`, not `implemented` — which is why success criterion 3 names four rows, not five.
 
 Phases 12+ remain **unwritten by design** and are promoted one at a time from the audit's
 recommended breakdown via `/gsd:add-phase`: sampling/elicitation/roots as an opt-in per-server
