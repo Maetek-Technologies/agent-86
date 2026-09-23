@@ -41,19 +41,19 @@ artifact plus, where stated, a test that pins it.
 
 ### Architecture decision records
 
-- [ ] **MCP-08**: An ADR rules on **sampling as an inversion of control, not a tool** —
+- [x] **MCP-08**: An ADR rules on **sampling as an inversion of control, not a tool** —
       implementing it makes agent86 the model provider for a *server's* request: third-party spend
       inside our turn against `limits.max_cost_usd`, with the completion visible to the server. If
       it ships at all it is opt-in per server, with its own approval gate and egress pass
-- [ ] **MCP-09**: An ADR rules on **elicitation as a Tier 1 surface** — a server prompting our
+- [x] **MCP-09**: An ADR rules on **elicitation as a Tier 1 surface** — a server prompting our
       user through our gateway is a phishing vector. Who renders it, and what it may not ask for,
       precede any decision to support it
-- [ ] **MCP-10**: An ADR rules on **schema deferral changing the prompt contract** — names plus
+- [x] **MCP-10**: An ADR rules on **schema deferral changing the prompt contract** — names plus
       server instructions in the system prompt with full schema on first use means the prompt no
       longer lists every callable tool, which interacts with `allowed-tools` gating (the prompt
       currently names the boundary so a refusal does not cost a step) and with `context_budget`'s
       fixed-overhead computation
-- [ ] **MCP-11**: An ADR rules on **where the result cap lives** — `_content_to_text` joins every
+- [x] **MCP-11**: An ADR rules on **where the result cap lives** — `_content_to_text` joins every
       content part uncapped while the flight recorder clips at `max_field_chars`; the ADR decides
       the prompt-side cap's home and whether it is per-server
 
@@ -131,10 +131,10 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-05 | Phase 10 | Complete |
 | MCP-06 | Phase 10 | Complete |
 | MCP-07 | Phase 10 | Complete |
-| MCP-08 | Phase 10 | Pending |
-| MCP-09 | Phase 10 | Pending |
-| MCP-10 | Phase 10 | Pending |
-| MCP-11 | Phase 10 | Pending |
+| MCP-08 | Phase 10 | Complete |
+| MCP-09 | Phase 10 | Complete |
+| MCP-10 | Phase 10 | Complete |
+| MCP-11 | Phase 10 | Complete |
 | MCP-12 | Phase 10 | Complete |
 | MCP-13 | Phase 10 | Pending |
 

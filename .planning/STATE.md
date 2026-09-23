@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-23T03:35:28.064Z"
+last_updated: "2026-09-23T03:42:37.644Z"
 last_activity: 2026-09-23
 progress:
   total_phases: 1
   completed_phases: 0
   total_plans: 5
-  completed_plans: 2
+  completed_plans: 3
 ---
 
 # Project State
@@ -54,7 +54,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
-| 10 — MCP Conformance Audit | ○ | not yet planned | 0% |
+| 10 — MCP Conformance Audit | ◐ | 3/5 | 60% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -64,6 +64,34 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-23 — **Plan 10-03 complete (four contract-touching ADRs, wave 2):** `docs/adr/` created
+  — the project's first ADR directory — with a lightweight-MADR convention (`README.md`:
+  `Context`/`Decision`/`Consequences`, a `**Ruling:**` line required, enforced by
+  `tests/unit/test_docs_consistency.py`) and four numbered ADRs, each stating a ruling rather than
+  leaving the question open. **ADR 0001 (sampling)** and **ADR 0002 (elicitation)**, framed as
+  build-or-don't decisions per 10-RESEARCH.md's Pitfall 1 (agent86's current non-support is a
+  protocol-correct *declared* "not supported" at `initialize()`, not a defect) — both ruled
+  **opt-in per server, deferred until a realistic corpus server demands it**, citing MCP-07's
+  live-run evidence (`docs/mcp-conformance-audit-2026-09.md`: `trigger-sampling-request*` and
+  both elicitation trigger tools absent from agent86's 13-tool list because agent86 declares
+  neither capability). ADR 0002 additionally sets four non-negotiable preconditions for any future
+  build: gateway-owned rendering, a hard refusal list (credentials/secrets/unvetted free text),
+  defined headless (`run --json`) behaviour, and refusal-as-a-normal-answer. **ADR 0003 (schema
+  deferral)** reconciles deferring MCP tool schemas to first use against the real
+  `context_budget` derivation (`ARCHITECTURE.md:615-619`) and the real `allowed-tools` boundary
+  (`ARCHITECTURE.md:543-544`): deferring *schemas* is permissible (the budget already recomputes
+  before every request); deferring tool *names* is not (it would make every out-of-bounds refusal
+  cost a step instead of being free). **ADR 0004 (result cap)** names the home for the uncapped
+  `_content_to_text` join (`mcp_client.py:426-434`) as a new per-server
+  `MCPServerConfig.max_result_chars` field, default 8,000 characters, truncate-with-visible-marker
+  (never drop, never raise), and rules `structured_content` (silently dropped today) explicitly
+  out of this ADR's scope. For plan 10-04's matrix: `CAP-SAMPLING`, `CAP-ELICITATION`,
+  `CAP-STRUCTURED-OUTPUT` and `CAP-CONTENT-BLOCKS` are all ruled **out**, with reasoning captured
+  in each ADR's Consequences section. `pytest tests/unit/test_docs_consistency.py --runxfail -k
+  adr` passes for real (`1 passed`); the module-scope `xfail` marker was left in place for plan
+  10-05 to remove. No deviations. `git status --porcelain src/ tests/` empty throughout; full
+  suite green: 1242 passed, 14 deselected, 6 xfailed, 1 xpassed, 0 failed.
 
 - 2026-09-23 — **Plan 10-01 complete (SEC-04 stdio proof + docs-consistency Wave 0 scaffold,
   parallel wave 1):** `tests/integration/live_mcp_server.py` gains a third tool, `get_env`,
@@ -841,7 +869,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 10 (mcp-conformance-audit) — EXECUTING
-Plan: 3 of 5
+Plan: 4 of 5
 Status: Ready to execute
 Last activity: 2026-09-23
 
