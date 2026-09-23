@@ -320,8 +320,12 @@ without hand-editing TOML or restarting.
 
 <!-- This milestone. Hypotheses until shipped. -->
 
-_Being defined for v1.1 — see `.planning/REQUIREMENTS.md`. All 10 v0.6, all 8 v0.7, all 7 v0.8,
-all 8 v0.9 and all 9 v1.0 requirements are validated; v1.0 shipped as v1.0.0 on 2026-09-21._
+**v1.1 (12, all Phase 10):** MCP-02…MCP-04 the conformance matrix · MCP-05…MCP-07 the pinned
+corpus · MCP-08…MCP-11 the four ADRs · MCP-12…MCP-13 evidence and A/B/C sizing. Full text and the
+deferred workstream requirements (MCP-14…MCP-26): `.planning/REQUIREMENTS.md`.
+
+Previously: all 10 v0.6, all 8 v0.7, all 7 v0.8, all 8 v0.9 and all 9 v1.0 requirements are
+validated; v1.0 shipped as v1.0.0 on 2026-09-21.
 
 ### Out of Scope
 
