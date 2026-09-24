@@ -93,7 +93,9 @@ class MCPTestModal(ModalScreen[MCPTestOutcome]):
                     self._name, self._cfg, timeout=self.TIMEOUT_S, overrides=self._overrides
                 )
             except BaseException as exc:  # noqa: BLE001 - surfaced verbatim (D-13 precedent)
-                holder["error"] = str(exc) or exc.__class__.__name__
+                from agent86.tools.mcp_client import describe_start_failure
+
+                holder["error"] = describe_start_failure(exc)
             finally:
                 done.set()
 

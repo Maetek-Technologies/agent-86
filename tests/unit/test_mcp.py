@@ -17,6 +17,7 @@ from agent86.tools.mcp_client import (
     _open_transport,
     _sanitize,
     build_mcp,
+    describe_start_failure,
 )
 from agent86.types import ToolCall
 
@@ -1339,6 +1340,161 @@ def test_reconnect_backoff_is_bounded_and_jittered():
         mcp_client._reconnect_backoff(20, jitter=lambda lo, hi: hi)
         == mcp_client._RECONNECT_MAX_DELAY_S
     )
+
+
+# --- Plan 12-08 Task 1: note listeners, sequenced note log, server-status accessors --------- #
+
+
+def test_note_listener_fires_for_every_event_even_duplicates():
+    manager = MCPManager({})
+    received: list[str] = []
+    manager.add_note_listener(received.append)
+    manager._add_note("x")
+    manager._add_note("x")
+    assert manager.notes == ["x"]  # notes/note keep their existing dedup
+    assert received == ["x", "x"]  # the event log/listeners do NOT dedup
+    assert manager.notes_since(0) == (2, ["x", "x"])
+    assert manager.notes_since(1) == (2, ["x"])
+    assert manager.note_seq == 2
+
+
+def test_note_listener_exception_never_propagates():
+    manager = MCPManager({})
+    received: list[str] = []
+
+    def _boom(message: str) -> None:
+        raise RuntimeError("boom")
+
+    manager.add_note_listener(_boom)
+    manager.add_note_listener(received.append)
+    manager._add_note("x")  # must not raise
+    assert received == ["x"]  # the second listener still ran
+
+
+def test_remove_note_listener_stops_delivery():
+    manager = MCPManager({})
+    received: list[str] = []
+    manager.add_note_listener(received.append)
+    manager._add_note("x")
+    manager.remove_note_listener(received.append)
+    manager._add_note("y")
+    assert received == ["x"]
+    manager.remove_note_listener(lambda m: None)  # unknown listener: a no-op, never raises
+
+
+def test_repeated_outages_surface_every_reconnecting_note(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a]), _Up([a]), _Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    received: list[str] = []
+    manager.add_note_listener(received.append)
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" in manager._sessions and transport.connects == 2)
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" in manager._sessions and transport.connects == 3)
+        assert sum("reconnecting (attempt 1 of 3)" in m for m in received) == 2
+        assert sum("reconnected" in m for m in received) == 2
+    finally:
+        manager.close()
+
+
+def test_server_status_formats_each_state():
+    manager = MCPManager({})
+    manager.servers = {"idle": MCPServerConfig(command="x")}
+    manager._server_state["reco"] = "reconnecting"
+    manager._reconnect_attempt["reco"] = 2
+    manager._disconnect_cause["reco"] = "c"
+    assert manager.server_status("reco") == "reconnecting (attempt 2 of 5): c"
+
+    manager._server_state["dead"] = "disconnected"
+    manager._disconnect_cause["dead"] = "c"
+    assert manager.server_status("dead") == "disconnected: c"
+
+    manager._server_state["live"] = "connected"
+    assert manager.server_status("live") is None
+    assert manager.server_status("unknown") is None
+
+    assert manager.server_statuses() == {
+        "dead": "disconnected: c",
+        "idle": "not connected",
+        "reco": "reconnecting (attempt 2 of 5): c",
+    }
+
+
+# --- Plan 12-08 Task 2: ExceptionGroup unwrapping + the stdio child's stderr tail ------------ #
+
+
+def test_describe_start_failure_unwraps_nested_exception_groups():
+    exc = ExceptionGroup(
+        "unhandled errors in a TaskGroup",
+        [ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("Connection closed")])],
+    )
+    assert describe_start_failure(exc) == "RuntimeError: Connection closed"
+
+
+def test_describe_start_failure_joins_distinct_leaves():
+    exc = ExceptionGroup(
+        "unhandled errors in a TaskGroup", [RuntimeError("a"), ValueError("a"), RuntimeError("a")]
+    )
+    # Three leaves, one duplicate description -> two unique, order-preserving, joined by "; ".
+    assert describe_start_failure(exc) == "RuntimeError: a; ValueError: a"
+
+
+def test_describe_start_failure_keeps_plain_exception_text():
+    assert describe_start_failure(RuntimeError("boom")) == "boom"
+    assert describe_start_failure(RuntimeError()) == "RuntimeError"
+
+
+def test_describe_start_failure_appends_stderr_tail():
+    import agent86.tools.mcp_client as mcp_client
+
+    exc = RuntimeError("boom")
+    exc.add_note(mcp_client._STDERR_NOTE_PREFIX + "line1\nboom-marker")
+    result = describe_start_failure(exc)
+    assert "boom-marker" in result
+    assert "stderr" in result
+
+
+def test_stderr_capture_tail_and_close():
+    import os
+
+    import agent86.tools.mcp_client as mcp_client
+
+    capture = mcp_client._StderrCapture()
+    for i in range(30):
+        capture.handle.write(f"line{i}\n")
+    capture.handle.flush()
+    lines = capture.tail().splitlines()
+    assert len(lines) == 20
+    assert lines[0] == "line10"
+    assert lines[-1] == "line29"
+    capture.close()
+    assert not os.path.exists(capture.path)
+    assert capture.tail() == ""  # never raises, even once the file is gone
+
+
+def test_start_note_has_no_taskgroup_wrapper(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    import agent86.tools.mcp_client as mcp_client
+
+    @asynccontextmanager
+    async def _fake_open_transport(cfg, env_passthrough=None):
+        raise ExceptionGroup("unhandled errors in a TaskGroup", [RuntimeError("refused")])
+        yield  # pragma: no cover - unreachable; keeps this an async generator function
+
+    monkeypatch.setattr(mcp_client, "_open_transport", _fake_open_transport)
+    manager = MCPManager({"srv": MCPServerConfig(command="npx")})
+    try:
+        manager.start()
+        joined = "\n".join(manager.notes)
+        assert "RuntimeError: refused" in joined
+        assert "TaskGroup" not in joined
+    finally:
+        manager.close()
 
 
 def test_real_sdk_tool_object_is_understood():

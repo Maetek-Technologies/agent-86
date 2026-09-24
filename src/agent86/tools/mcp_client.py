@@ -15,20 +15,27 @@ background event loop so the synchronous harness can call MCP tools via
 from __future__ import annotations
 
 import asyncio
+import contextvars
+import logging
+import os
 import random
 import re
+import tempfile
 import threading
 import warnings
+from collections import deque
 from collections.abc import Callable, Coroutine
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
-from typing import Any, Generic, Literal, NamedTuple, TypeVar
+from typing import Any, Generic, Literal, NamedTuple, TextIO, TypeVar, cast
 
 from pydantic import BaseModel, Field
 
 from agent86.config import Config, MCPServerConfig
 from agent86.tools.base import EmptyArgs, Tool, ToolContext
 from agent86.types import ToolCall, ToolResult, ToolSpec
+
+logger = logging.getLogger(__name__)
 
 _NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 
@@ -37,6 +44,20 @@ _NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 _MAX_RECONNECT_ATTEMPTS = 5
 _RECONNECT_BASE_DELAY_S = 0.5
 _RECONNECT_MAX_DELAY_S = 30.0
+
+#: Bounded event log behind `notes_since` — a live, forever-running session must not grow this
+#: unboundedly; 500 note events is generous for any realistic outage history.
+_NOTE_EVENT_LIMIT = 500
+
+#: PEP 678 note prefix marking a stdio start failure's captured child stderr tail (Task 2).
+_STDERR_NOTE_PREFIX = "agent86-mcp-stderr:\n"
+#: Per-attempt hand-off for the stdio child's stderr capture file (Task 2). A ContextVar, not a
+#: new `_open_transport` parameter: many tests replace `_open_transport` with a bare
+#: `(cfg, env_passthrough=None)` fake, and an asyncio task carries its own context, so the value
+#: set in one server's `_serve_once` is only ever seen by that same server's `_open_transport`.
+_STDIO_ERRLOG: contextvars.ContextVar[TextIO | None] = contextvars.ContextVar(
+    "agent86_mcp_stdio_errlog", default=None
+)
 
 
 def _sanitize(name: str) -> str:
@@ -399,11 +420,132 @@ def _describe(exc: BaseException) -> str:
     return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
 
 
+def _leaf_exceptions(exc: BaseException) -> list[BaseException]:
+    """Every leaf of a (possibly nested) BaseExceptionGroup, depth-first, order-preserving."""
+    if isinstance(exc, BaseExceptionGroup):
+        leaves: list[BaseException] = []
+        for sub in exc.exceptions:
+            leaves.extend(_leaf_exceptions(sub))
+        return leaves
+    return [exc]
+
+
+def describe_start_failure(exc: BaseException) -> str:
+    """Render a start failure for a human — never the SDK's bare ``unhandled errors in a
+    TaskGroup`` wrapper text.
+
+    A non-group exception keeps the format ``start()`` has always used (``str(exc)``, falling
+    back to the class name when the exception carries no message). A
+    ``BaseExceptionGroup`` — what anyio's task groups always raise, often nested — is unwrapped
+    to EVERY distinct leaf (order-preserving, duplicate descriptions collapsed), joined by
+    ``"; "``: a TaskGroup can legitimately carry more than one real cause.
+
+    If ``exc`` carries a PEP 678 note starting with ``_STDERR_NOTE_PREFIX`` (see
+    ``_StderrCapture``/``_serve_once``), the child's captured stderr tail is appended — with an
+    extra, named fix when the failure was the SDK's own CONNECTION_CLOSED (the child almost
+    certainly exited during startup, and the fix is usually its command/args).
+    """
+    if isinstance(exc, BaseExceptionGroup):
+        leaves = _leaf_exceptions(exc)
+        seen: list[str] = []
+        for leaf in leaves:
+            described = _describe(leaf)
+            if described not in seen:
+                seen.append(described)
+        message = "; ".join(seen)
+        is_connection_closed = any(_is_connection_closed(leaf) for leaf in leaves)
+    else:
+        message = str(exc) or type(exc).__name__
+        is_connection_closed = _is_connection_closed(exc)
+
+    tail: str | None = None
+    for note in getattr(exc, "__notes__", None) or []:
+        if isinstance(note, str) and note.startswith(_STDERR_NOTE_PREFIX):
+            tail = note[len(_STDERR_NOTE_PREFIX) :]
+            break
+    if tail:
+        indented = "\n".join(f"  {line}" for line in tail.splitlines())
+        if is_connection_closed:
+            message += (
+                "\nThe server process exited during startup. Its stderr (last lines):\n"
+                f"{indented}\n"
+                "Check this server's command/args — e.g. the interpreter it runs may be "
+                "missing the server's package."
+            )
+        else:
+            message += f"\nServer stderr (last lines):\n{indented}"
+    return message
+
+
+class _StderrCapture:
+    """Capture a stdio MCP child's stderr to a temp file (Task 2, `_STDIO_ERRLOG`).
+
+    Windows' ``create_windows_process`` hands the SDK's ``errlog`` straight to
+    ``anyio.open_process(stderr=...)``, which needs a real ``fileno()`` — a pipe or a
+    ``StringIO`` does not work there — so a temp file is used instead of either.
+    """
+
+    def __init__(self) -> None:
+        self._file = tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            errors="replace",
+            delete=False,
+            prefix="agent86-mcp-",
+            suffix=".stderr",
+        )
+        self.path = self._file.name
+
+    @property
+    def handle(self) -> TextIO:
+        return cast(TextIO, self._file)
+
+    def tail(self, max_lines: int = 20, max_bytes: int = 2048) -> str:
+        """The last `max_lines` lines written so far, secrets redacted. Never raises.
+
+        Reads through a SEPARATE handle opened fresh on every call: on Windows the child's
+        inherited handle shares `self._file`'s own write position, so reading back through the
+        same object would not see what the child actually wrote.
+        """
+        try:
+            with open(self.path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                size = f.tell()
+                start = max(0, size - max_bytes)
+                f.seek(start)
+                data = f.read()
+            text = data.decode("utf-8", "replace")
+            lines = text.splitlines()
+            if start > 0 and lines:
+                lines = lines[1:]  # the read may have started mid-line; drop the partial one
+            while lines and not lines[-1].strip():
+                lines.pop()
+            text = "\n".join(lines[-max_lines:])
+            try:
+                from agent86.guardrails.scanners import redact
+
+                text = redact(text, pii=False)[0]
+            except Exception:  # noqa: BLE001 - a redaction failure must not hide the tail
+                pass
+            return text
+        except OSError:
+            return ""
+
+    def close(self) -> None:
+        """Best-effort cleanup. A leftover temp file (Windows may still hold it) is acceptable;
+        a raise here is not."""
+        with suppress(OSError):
+            self._file.close()
+        with suppress(OSError):
+            os.unlink(self.path)
+
+
 class _SessionEnd(NamedTuple):
     """The result of one _serve_once attempt. ``cause is None`` means a deliberate stop."""
 
     cause: str | None
     tools: list[Tool]
+    stderr_tail: str = ""
 
 
 def _is_connection_closed(exc: BaseException) -> bool:
@@ -524,12 +666,108 @@ class MCPManager:
         #: wires it to its ToolRegistry (12-04). Never called for start_server/stop_server —
         #: those callers already update the registry themselves.
         self.on_tools_changed: Callable[[str, list[Tool], list[Tool]], None] | None = None
+        # Push-hook plumbing for surfacing notes live (Task 3): a bounded, non-deduped event
+        # log plus a listener list, both guarded by one lock. `close()` deliberately does not
+        # clear these — a caller's wiring (e.g. Harness._wire_mcp) must survive a close/start
+        # cycle, exactly like `on_tools_changed` already does.
+        self._notes_lock = threading.Lock()
+        self._note_seq = 0
+        self._note_events: deque[tuple[int, str]] = deque(maxlen=_NOTE_EVENT_LIMIT)
+        self._note_listeners: list[Callable[[str], None]] = []
 
     def _add_note(self, message: str) -> None:
-        """Record a degradation without erasing the previous one."""
-        if message not in self.notes:
-            self.notes.append(message)
-        self.note = "\n".join(self.notes)
+        """Record a degradation without erasing the previous one.
+
+        Runs on whichever thread added the note — usually the MCP loop thread (`_serve`,
+        `_serve_once`, `_on_drop`, `_emit_tools_changed`'s failure path), but also the caller's
+        own thread (`start`, `stop_server`, `_ensure_loop`) — so every listener registered via
+        `add_note_listener` must be thread-safe and non-blocking, and must never call back into
+        `_add_note` itself (that would recurse under `_notes_lock`).
+
+        `notes`/`note` keep their existing dedup (startup-note rendering and pre-existing tests
+        depend on it seeing each distinct message once). The event log behind `notes_since`
+        does NOT dedup — every call appends and fires listeners, so a repeat outage (the same
+        "reconnecting (attempt 1 of N)" text twice) is never swallowed.
+        """
+        with self._notes_lock:
+            if message not in self.notes:
+                self.notes.append(message)
+            self.note = "\n".join(self.notes)
+            self._note_seq += 1
+            self._note_events.append((self._note_seq, message))
+            listeners = list(self._note_listeners)
+        for listener in listeners:
+            try:
+                listener(message)
+            except Exception:  # noqa: BLE001 - a listener failure must never wedge _add_note
+                logger.debug("MCP note listener failed", exc_info=True)
+
+    def add_note_listener(self, listener: Callable[[str], None]) -> None:
+        """Register ``listener(message)`` to be called on every `_add_note`, repeats included.
+
+        Called on whichever thread adds the note (see `_add_note`'s docstring) — the listener
+        must be thread-safe and non-blocking. No-op if `listener` (by equality — a bound method
+        compares equal across separate attribute accesses) is already registered.
+        """
+        with self._notes_lock:
+            if listener not in self._note_listeners:
+                self._note_listeners.append(listener)
+
+    def remove_note_listener(self, listener: Callable[[str], None]) -> None:
+        """Stop delivering notes to `listener`. A no-op if it was never registered."""
+        with self._notes_lock:
+            if listener in self._note_listeners:
+                self._note_listeners.remove(listener)
+
+    @property
+    def note_seq(self) -> int:
+        """The sequence number of the most recent note event (0 if none yet)."""
+        with self._notes_lock:
+            return self._note_seq
+
+    def notes_since(self, seq: int) -> tuple[int, list[str]]:
+        """Every note event strictly after `seq`, in order — NOT deduped.
+
+        Returns ``(current_seq, messages)``; a caller polls by remembering `current_seq` and
+        passing it back next time. Only the most recent `_NOTE_EVENT_LIMIT` events are kept.
+        """
+        with self._notes_lock:
+            return self._note_seq, [m for s, m in self._note_events if s > seq]
+
+    def server_status(self, name: str) -> str | None:
+        """A human-readable non-connected status for `name`, or None if connected/unknown.
+
+        The small public accessor the TUI/`--plain` use for `/tools` and its equivalents —
+        callers must not read `_server_state`/`_disconnect_cause`/`_reconnect_attempt` directly.
+        """
+        state = self._server_state.get(name)
+        if state == "reconnecting":
+            attempt = self._reconnect_attempt.get(name, 1)
+            cause = self._disconnect_cause.get(name, "the transport closed")
+            return f"reconnecting (attempt {attempt} of {_MAX_RECONNECT_ATTEMPTS}): {cause}"
+        if state == "disconnected":
+            cause = self._disconnect_cause.get(name, "the transport closed")
+            return f"disconnected: {cause}"
+        return None
+
+    def server_statuses(self) -> dict[str, str]:
+        """Every known server that is NOT currently connected, name -> status text, sorted.
+
+        "Known" means configured (`self.servers`) or previously seen dropping/reconnecting
+        (`self._server_state`) — a server with neither a live session nor a recorded state
+        (never started, or stopped) reports as ``"not connected"``. Connected servers are
+        omitted entirely.
+        """
+        names = sorted(set(list(self.servers)) | set(list(self._server_state)))
+        statuses: dict[str, str] = {}
+        for name in names:
+            status = self.server_status(name)
+            if status is not None:
+                statuses[name] = status
+                continue
+            if name not in self._sessions and self._server_state.get(name) != "connected":
+                statuses[name] = "not connected"
+        return statuses
 
     def _emit_tools_changed(self, name: str, removed: list[Tool], added: list[Tool]) -> None:
         """Call ``on_tools_changed`` if set. Never raises — this runs on the loop thread."""
@@ -631,6 +869,16 @@ class MCPManager:
         connected = False
         tools: list[Tool] = []
         dropped_cause: str | None = None
+        # Initialized unconditionally: the final `return` below reads `stderr_tail` on every
+        # exit path (sse/http, a deliberate stop, and a stdio drop alike), not only stdio.
+        stderr_tail = ""
+        capture: _StderrCapture | None = None
+        if cfg.transport == "stdio":
+            try:
+                capture = _StderrCapture()
+            except OSError:
+                capture = None  # fall back to the terminal, exactly as before this plan
+        token = _STDIO_ERRLOG.set(capture.handle if capture is not None else None)
         try:
             async with AsyncExitStack() as stack:
                 streams = await stack.enter_async_context(
@@ -697,14 +945,36 @@ class MCPManager:
                 # A post-connect failure escaping the transport's own task group is a drop.
                 dropped_cause = _describe(exc)
             elif not connected:
-                # Connect-time failure — the caller (start_server) decides what to do.
+                # Connect-time failure — the caller (start_server) decides what to do. The
+                # `async with` has already unwound here, so the child (if any) has exited and
+                # its stderr is flushed — attach the tail as a PEP 678 note for
+                # `describe_start_failure` to read back out at the `start()` call site.
+                if capture is not None and (tail := capture.tail()):
+                    exc.add_note(_STDERR_NOTE_PREFIX + tail)
                 raise
             # else: teardown noise after a deliberate stop (research Pitfall 2) — swallow it.
         finally:
             # SC1: both dicts cleared in the same place, on every exit path.
             self._sessions.pop(name, None)
             self._server_tools.pop(name, None)
-        return _SessionEnd(dropped_cause, tools)
+            if dropped_cause is not None:
+                # Set HERE, atomically with the two pops above — not left for `_serve`'s later
+                # `_on_drop` call — so a caller on another thread that polls `_sessions` (or
+                # `server_status()`) for "the session is gone" never observes that with no
+                # reason attached. The stderr-capture I/O below is a real (GIL-releasing)
+                # syscall on Windows; without this, that alone was enough to let another thread
+                # observe an empty `_sessions` next to a still-unset `_server_state`. `_on_drop`
+                # (back in `_serve`) re-sets both — harmless — and owns the note/emit.
+                self._server_state[name] = "disconnected"
+                self._disconnect_cause[name] = dropped_cause
+            _STDIO_ERRLOG.reset(token)
+            if capture is not None:
+                if dropped_cause is not None:
+                    # A short tail for the mid-session drop note (_on_drop) — the full 20-line
+                    # tail already went into the start-failure note above, when applicable.
+                    stderr_tail = capture.tail(max_lines=3, max_bytes=512)
+                capture.close()
+        return _SessionEnd(dropped_cause, tools, stderr_tail)
 
     async def _serve(
         self, name: str, cfg: MCPServerConfig, ready: asyncio.Future, close_event: asyncio.Event
@@ -742,7 +1012,7 @@ class MCPManager:
                     return
                 cause = end.cause
                 attempt = 0  # it was connected: this outage gets a fresh budget
-                self._on_drop(name, cause, end.tools)
+                self._on_drop(name, cause, end.tools, end.stderr_tail)
             attempt += 1
             if attempt > _MAX_RECONNECT_ATTEMPTS:
                 self._server_state[name] = "disconnected"
@@ -767,14 +1037,20 @@ class MCPManager:
                 pass
             reconnecting = True
 
-    def _on_drop(self, name: str, cause: str, tools: list[Tool]) -> None:
+    def _on_drop(self, name: str, cause: str, tools: list[Tool], stderr_tail: str = "") -> None:
         """Record and announce a mid-session drop (not a deliberate stop_server()/close())."""
         self._server_state[name] = "disconnected"
         self._disconnect_cause[name] = cause
-        self._add_note(
+        note = (
             f"MCP server '{name}' disconnected ({cause}); its {len(tools)} tool(s) were "
             "unregistered."
         )
+        if stderr_tail:
+            # Appended to the NOTE only — never to `_disconnect_cause`, which is model-facing
+            # via `_unavailable_error` and must stay the short, stable cause string.
+            joined = " | ".join(stderr_tail.splitlines())[:300]
+            note += f" Last server stderr: {joined}"
+        self._add_note(note)
         self._emit_tools_changed(name, tools, [])
 
     def stop_server(self, name: str, timeout: float = 10.0) -> None:
@@ -817,7 +1093,9 @@ class MCPManager:
             try:
                 self.start_server(name, cfg)
             except Exception as exc:  # noqa: BLE001 - one bad server degrades to a note
-                self._add_note(f"MCP server '{name}' failed to start: {exc}")
+                self._add_note(
+                    f"MCP server '{name}' failed to start: {describe_start_failure(exc)}"
+                )
 
     def _run_loop(self) -> None:
         assert self._loop is not None
@@ -1141,7 +1419,13 @@ def _open_transport(cfg: MCPServerConfig, env_passthrough: list[str] | None = No
             args=cfg.args,
             env=stdio_env(cfg, env_passthrough),
         )
-        return stdio_client(params)
+        # `_STDIO_ERRLOG` is a ContextVar, not a new parameter here: many tests replace
+        # `_open_transport` with a bare `(cfg, env_passthrough=None)` fake, so the call site in
+        # `_serve_once` must keep calling this function with exactly those two arguments. When
+        # unset (a direct caller, e.g. a unit test that calls this function itself), the default
+        # path is byte-for-byte unchanged — the SDK's own `errlog=sys.stderr`.
+        errlog = _STDIO_ERRLOG.get()
+        return stdio_client(params, errlog=errlog) if errlog is not None else stdio_client(params)
     assert cfg.url is not None
     if cfg.transport == "sse":
         from mcp.client.sse import sse_client
@@ -1324,6 +1608,7 @@ __all__ = [
     "MCPTool",
     "MCPUnsubscribeResourceTool",
     "build_mcp",
+    "describe_start_failure",
     "stdio_env",
     "_resolve_server_secrets",
     "unresolved_var_refs",

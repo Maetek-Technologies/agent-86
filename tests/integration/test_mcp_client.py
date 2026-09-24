@@ -182,6 +182,30 @@ def test_start_server_failure_does_not_break_manager():
 
 
 @pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_stdio_start_failure_note_carries_child_stderr():
+    """Plan 12-08 Task 2, end to end: a real stdio child's stderr reaches the start-failure note.
+
+    A start failure used to render as the SDK's bare `unhandled errors in a TaskGroup (1
+    sub-exception)` — the real reason (here, the child's own stderr) went to the terminal,
+    invisible under the TUI. `describe_start_failure` names the leaf cause AND quotes the
+    child's captured stderr tail.
+    """
+    cfg = MCPServerConfig(
+        command=sys.executable,
+        args=["-c", "import sys; print('boom-marker', file=sys.stderr); sys.exit(3)"],
+    )
+    manager = MCPManager({"live": cfg})
+    try:
+        manager.start()
+        joined = "\n".join(manager.notes)
+        assert "MCP server 'live' failed to start" in joined
+        assert "boom-marker" in joined
+        assert "unhandled errors in a TaskGroup" not in joined
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
 def test_stdio_server_gets_scrubbed_env(monkeypatch):
     """SEC-04, end to end: the stdio subprocess gets scrubbed_env(), not os.environ.
 
