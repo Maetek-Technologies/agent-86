@@ -21,7 +21,7 @@ import warnings
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -109,6 +109,37 @@ class _MCPCapabilityTool(Tool[_TArgs], Generic[_TArgs]):
 class _ResourceUriArgs(BaseModel):
     uri: str = Field(
         description="The resource URI, exactly as returned by the list_resources tool."
+    )
+
+
+class _GetPromptArgs(BaseModel):
+    name: str = Field(description="Prompt name, exactly as returned by the list_prompts tool.")
+    arguments: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Values for the prompt's arguments, keyed by argument name. "
+            "Omit or pass {} for a prompt that takes none."
+        ),
+    )
+
+
+class _CompleteArgs(BaseModel):
+    ref_type: Literal["prompt", "resource"] = Field(
+        description=(
+            "'prompt' to complete a prompt argument, 'resource' to complete a resource-template "
+            "variable."
+        )
+    )
+    ref: str = Field(
+        description=(
+            "For ref_type='prompt', the prompt name from list_prompts. For ref_type='resource', "
+            "the uri_template from list_resource_templates."
+        )
+    )
+    argument_name: str = Field(description="Which argument or template variable to complete.")
+    argument_value: str = Field(
+        default="",
+        description="The partial value typed so far. Pass '' to ask for every suggestion.",
     )
 
 
@@ -200,6 +231,67 @@ class MCPUnsubscribeResourceTool(_MCPCapabilityTool[_ResourceUriArgs]):
             return self._failed(exc)
 
 
+class MCPListPromptsTool(_MCPCapabilityTool[EmptyArgs]):
+    """prompts/list."""
+
+    verb = "list_prompts"
+    summary = (
+        "List the prompt templates this MCP server offers, as 'name | arguments | description' "
+        "rows. Fetch one with get_prompt."
+    )
+    Args = EmptyArgs
+
+    def execute(self, args: EmptyArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(self._manager.list_prompts(self._server))
+        except Exception as exc:  # noqa: BLE001 - a tool never raises into the loop
+            return self._failed(exc)
+
+
+class MCPGetPromptTool(_MCPCapabilityTool[_GetPromptArgs]):
+    """prompts/get."""
+
+    verb = "get_prompt"
+    summary = (
+        "Fetch one prompt template from this MCP server, rendered with the arguments you supply, "
+        "as a '[role]: text' transcript."
+    )
+    Args = _GetPromptArgs
+
+    def execute(self, args: _GetPromptArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(
+                self._manager.get_prompt(self._server, args.name, args.arguments or None)
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
+class MCPCompleteTool(_MCPCapabilityTool[_CompleteArgs]):
+    """completion/complete."""
+
+    verb = "complete"
+    summary = (
+        "Ask this MCP server for valid values of one prompt argument or resource-template "
+        "variable, optionally filtered by a partial value."
+    )
+    Args = _CompleteArgs
+
+    def execute(self, args: _CompleteArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(
+                self._manager.complete(
+                    self._server,
+                    args.ref_type,
+                    args.ref,
+                    args.argument_name,
+                    args.argument_value,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
 def _get_client_session() -> Any:
     """Return ``mcp.ClientSession``, looked up through this module's own globals first.
 
@@ -262,6 +354,12 @@ def _capability_tools(manager: MCPManager, server: str, caps: Any) -> list[Tool]
         if getattr(resources, "subscribe", False):
             extra.append(MCPSubscribeResourceTool(manager, server))
             extra.append(MCPUnsubscribeResourceTool(manager, server))
+    if getattr(caps, "prompts", None) is not None:
+        extra.append(MCPListPromptsTool(manager, server))
+        extra.append(MCPGetPromptTool(manager, server))
+    if getattr(caps, "completions", None) is not None:
+        # CompletionsCapability is an empty marker class on the SDK — its presence IS the signal.
+        extra.append(MCPCompleteTool(manager, server))
     return extra
 
 
@@ -540,6 +638,63 @@ class MCPManager:
 
         return self._on_session(server, _call)
 
+    def list_prompts(self, server: str) -> tuple[str, dict[str, Any]]:
+        """``prompts/list`` — a single page, matching list_tools()/list_resources() (MCP-21/C)."""
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            result = await session.list_prompts()
+            prompts = list(getattr(result, "prompts", None) or [])
+            return _prompts_to_text(prompts), {"count": len(prompts)}
+
+        return self._on_session(server, _call)
+
+    def get_prompt(
+        self, server: str, name: str, arguments: dict[str, str] | None = None
+    ) -> tuple[str, dict[str, Any]]:
+        """``prompts/get``. The server's own description, if any, heads the transcript."""
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            result = await session.get_prompt(name, arguments or None)
+            text, meta = _prompt_messages_to_text(list(getattr(result, "messages", None) or []))
+            description = getattr(result, "description", None)
+            if description:
+                text = f"{description}\n\n{text}"
+            return text, {"prompt": name, **meta}
+
+        return self._on_session(server, _call)
+
+    def complete(
+        self,
+        server: str,
+        ref_type: str,
+        ref: str,
+        argument_name: str,
+        argument_value: str = "",
+    ) -> tuple[str, dict[str, Any]]:
+        """``completion/complete`` for a prompt argument or a resource-template variable.
+
+        ``ref_type`` selects the SDK's reference union explicitly (D-08): ``"prompt"`` builds a
+        ``PromptReference(name=ref)``, anything else a ``ResourceTemplateReference(uri=ref)``.
+        ``context_arguments`` is deliberately not exposed — no corpus server demands it, and a
+        minimal surface is easier to widen later than to narrow.
+        """
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            from mcp import types as mcp_types
+
+            reference = (
+                mcp_types.PromptReference(name=ref)
+                if ref_type == "prompt"
+                else mcp_types.ResourceTemplateReference(uri=ref)
+            )
+            result = await session.complete(
+                reference, {"name": argument_name, "value": argument_value}
+            )
+            text, meta = _completion_to_text(getattr(result, "completion", None))
+            return text, {"ref_type": ref_type, "ref": ref, "argument": argument_name, **meta}
+
+        return self._on_session(server, _call)
+
     def close(self) -> None:
         """Shut every server down and return the manager to a restartable state.
 
@@ -753,6 +908,63 @@ def _resource_contents_to_text(contents: list[Any]) -> tuple[str, dict[str, Any]
     return "\n".join(parts), metadata
 
 
+def _prompts_to_text(prompts: list[Any]) -> str:
+    """``name | arguments | description``, one line per prompt; ``*`` marks a required argument."""
+    if not prompts:
+        return "(no prompts)"
+    lines = ["name | arguments | description"]
+    for p in prompts:
+        arguments = list(getattr(p, "arguments", None) or [])
+        rendered = (
+            ", ".join(
+                f"{getattr(a, 'name', '')}{'*' if getattr(a, 'required', False) else ''}"
+                for a in arguments
+            )
+            or "(none)"
+        )
+        lines.append(_row(getattr(p, "name", ""), rendered, getattr(p, "description", None) or ""))
+    lines.append("(* = required argument; pass them to get_prompt as the `arguments` object)")
+    return "\n".join(lines)
+
+
+def _prompt_messages_to_text(messages: list[Any]) -> tuple[str, dict[str, Any]]:
+    """Render ``GetPromptResult.messages`` as a ``[role]: text`` transcript.
+
+    A non-text content block (image, audio, embedded resource, resource link) becomes a NAMED
+    marker — never ``str(block)``, the Python repr that ``_content_to_text`` falls back to and
+    that CAP-CONTENT-BLOCKS / ADR 0004 record as a defect (D-07). Repairing that older path is
+    MCP-25, workstream C; this is new code and simply does not have the bug.
+    """
+    if not messages:
+        return "(no messages)", {}
+    lines: list[str] = []
+    non_text: list[dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        raw_role = getattr(message, "role", "")
+        role = str(getattr(raw_role, "value", raw_role) or "unknown")
+        content = getattr(message, "content", None)
+        text = getattr(content, "text", None)
+        if text is not None:
+            lines.append(f"[{role}]: {text}")
+            continue
+        kind = type(content).__name__
+        non_text.append({"index": index, "role": role, "type": kind})
+        lines.append(f"[{role}]: [non-text content block: {kind} — not inlined]")
+    metadata: dict[str, Any] = {"non_text_blocks": non_text} if non_text else {}
+    return "\n".join(lines), metadata
+
+
+def _completion_to_text(completion: Any) -> tuple[str, dict[str, Any]]:
+    """One suggestion per line, with the server's total/has_more hints in the metadata."""
+    values = [str(v) for v in (getattr(completion, "values", None) or [])]
+    metadata: dict[str, Any] = {
+        "count": len(values),
+        "total": getattr(completion, "total", None),
+        "has_more": getattr(completion, "has_more", None),
+    }
+    return ("\n".join(values) if values else "(no suggestions)"), metadata
+
+
 def build_mcp(config: Config) -> MCPManager | None:
     """Start MCP servers from config, or return None if disabled / none configured.
 
@@ -773,6 +985,9 @@ def build_mcp(config: Config) -> MCPManager | None:
 
 
 __all__ = [
+    "MCPCompleteTool",
+    "MCPGetPromptTool",
+    "MCPListPromptsTool",
     "MCPListResourceTemplatesTool",
     "MCPListResourcesTool",
     "MCPManager",
