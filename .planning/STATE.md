@@ -1064,13 +1064,19 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   promoted 2026-09-23 from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown"
   (Proposed Phase 11) once Phase 10's matrix was ruled on. Phases 12+ of that breakdown stay
   unwritten and are promoted one at a time.
+- Phase 12 added: Fix the zombie-tool desync and add reconnect — workstream C (MCP-26, MCP-23),
+  promoted 2026-09-24 from the same breakdown (Proposed Phase 15, renumbered on promotion).
+  Chosen next because it is the only confirmed defect in the breakdown (re-confirmed at
+  `mcp_client.py:501-502` after Phase 11, whose capability tools widen it) and the later
+  workstream-C phases depend on the `_serve` lifecycle it fixes; MCP-16 (sampling/elicitation/
+  roots) stays behind under the BACKLOG's demand-ceiling rule.
 
 ## Current Position
 
-Phase: 11
+Phase: 12
 Plan: Not started
-Status: Milestone v1.1 at 2/2 planned phases complete (Phase 10 + Phase 11); phases 12+ remain
-unwritten by design, promoted one at a time via `/gsd:add-phase`
+Status: Milestone v1.1 at 2/3 phases complete (Phase 10 + Phase 11); Phase 12 added, not yet
+planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
 ## Next Step

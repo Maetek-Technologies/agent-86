@@ -7,7 +7,7 @@
 - **v0.8 Context & Cost** — Phase 7 — shipped 2026-09-19
 - **v0.9 Coding-Agent UX** — Phase 8 — shipped 2026-09-21
 - **v1.0 Release** — Phase 9 — shipped 2026-09-21, published to PyPI
-- **v1.1 MCP Integration Depth** — Phases 10-11 — in progress (started 2026-09-22)
+- **v1.1 MCP Integration Depth** — Phases 10-12 — in progress (started 2026-09-22)
 
 Full detail for v0.6-v1.0: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) ·
 requirements: [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) ·
@@ -54,6 +54,9 @@ implementation phases are now written from its recommended breakdown
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
   — **4 plans**, 4 waves
+- [ ] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies
+  mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
+  closing MCP-26 and MCP-23
 
 ## Phase Details
 
@@ -134,6 +137,38 @@ Plans:
 - [x] 11-04-PLAN.md — the two live-evidence runs, and the conformance matrix / ARCHITECTURE §15 /
   README / CHANGELOG re-ruling (wave 4)
 
+#### Phase 12: Fix the zombie-tool desync and add reconnect
+**Workstream**: C
+**Goal**: A server that dies mid-session has its tools unregistered rather than left
+callable-but-broken, and a dropped transport reconnects instead of ending the task permanently.
+**Depends on**: Phase 10 only (sequenced after Phase 11, whose capability-gated tools now also
+live in `_server_tools` and so widen the desync)
+**Requirements**: MCP-26, MCP-23
+**Matrix rows closed**: none directly — both are agent86-side lifecycle strategies, not spec
+capabilities (see "Not rated here" in `docs/mcp-conformance-matrix.md`)
+**Success Criteria** (what must be TRUE):
+  1. When a stdio server's task exits through the `except BaseException` path after `ready` has
+     resolved, `self._server_tools[name]` is popped in the same `finally` block that already pops
+     `self._sessions[name]`, so `tools_for()`/`tools()` stop listing that server's tools —
+     including the Phase 11 resource/prompt/completion tools — instead of leaving them
+     callable-but-broken.
+  2. A model that calls a tool belonging to a server that has died receives a message naming the
+     dead server, not a generic `RuntimeError("MCP session not available")`.
+  3. `_serve` retries a dropped transport a bounded number of times with backoff before giving up,
+     and a successful reconnect re-populates `self._server_tools` from a fresh `list_tools()` call
+     and a fresh `server_capabilities` read.
+**Risk / constraint**: touches `_serve`'s task lifecycle, which every later workstream-C phase
+(timeouts/result cap/content, schema deferral/notifications) depends on — so it lands first among
+them. No new core dependency; cold-start unaffected (server-death handling only fires once a
+session is running); `run --json` keys additive-only.
+**Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown" → Proposed Phase 15 (renumbered 12 on promotion); defect first
+flagged in [../docs/BACKLOG.md](../docs/BACKLOG.md) § 999.0 audit head start, confirmed by Phase 10
+**Plans**: 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 12 to break down)
+
 ## Next
 
 **Phase 10 — MCP Conformance Audit — is complete** (5/5 plans, 2026-09-23). The conformance
@@ -159,11 +194,17 @@ the CI fixture's own real stdio round trip (plan 11-02), which does exercise a g
 `resources` capability end to end. This is a fact about the current third-party package, not an
 agent86 defect, and is not this milestone's to fix.
 
-Phases 12+ remain **unwritten by design** and are promoted one at a time from the audit's
-recommended breakdown via `/gsd:add-phase`: sampling/elicitation/roots as an opt-in per-server
-surface (A), OAuth discovery/authorization and token refresh against GitHub's hosted server (B),
-and the zombie-tool desync, reconnect, timeouts/result cap/non-text content, and schema
-deferral/notification handling (C). Sizing, corrected by the audit: **C is larger than A on
+**Phase 12 — Fix the zombie-tool desync and add reconnect — is next** (added 2026-09-24, not yet
+planned): workstream C's lead phase, MCP-26 and MCP-23. Chosen ahead of the rest because it is the
+only item in the breakdown that fixes a confirmed defect rather than adding surface, and the later
+workstream-C phases build on the `_serve` lifecycle it repairs.
+
+Phases 13+ remain **unwritten by design** and are promoted one at a time from the audit's
+recommended breakdown via `/gsd:add-phase`: timeouts/result cap/non-text content and schema
+deferral/notification handling (C), and OAuth discovery/authorization and token refresh against
+GitHub's hosted server (B). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
+rules all three `out` under the BACKLOG's "the ceiling is demand" rule until a realistic corpus
+server needs them (ADRs 0001/0002). Sizing, corrected by the audit: **C is larger than A on
 findings and deferred requirements, and materially larger than B on every metric**; A leads only
 on raw matrix-row count (9 vs 7).
 
@@ -184,11 +225,10 @@ Antigravity. Full analysis for every item: [../docs/BACKLOG.md](../docs/BACKLOG.
 
 **Standing constraint:** none of these outranks MCP integration work. 999.0a is **promoted to
 Phase 10** in the active milestone (v1.1, above) and no longer lives in this unsequenced block;
-999.0b–d remain here, blocked on Phase 10's matrix. They are ordered *among themselves*; MCP sits
-above the whole block.
+999.0b–d are unblocked (Phase 10's matrix is ruled) and are being promoted into v1.1 one phase at
+a time. The 999.1–999.7 items are ordered *among themselves*; MCP sits above the whole block.
 
 Prioritised order — 999.1 → 999.2 → 999.3 → 999.4, then the rest unordered.
-999.0b–d are blocked on Phase 10's matrix and are not sequenced yet.
 
 ### Phase 999.0a: MCP conformance audit + ADRs — PROMOTED to Phase 10 (v1.1)
 
@@ -207,12 +247,14 @@ hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG
 head start — start there, not from the spec.
 **Plans:** 4/4 plans complete
 
-### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
+### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
-**Goal:** The three workstreams themselves. Deliberately unwritten: sizing and sequencing come
-from Phase 10's matrix (formerly 999.0a, promoted to v1.1), and the head start suggests C > A > B
-by volume.
-**Requirements:** Blocked on Phase 10. Do not promote before the matrix is ruled on.
+**Status:** Unblocked 2026-09-23 when Phase 10's matrix was ruled; sized and sequenced in
+`docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Promoted so far:
+**Phase 11** (999.0b, workstream A — MCP-14/MCP-15, complete 2026-09-24) and **Phase 12**
+(999.0d, workstream C — MCP-26/MCP-23, added 2026-09-24). The rest are promoted one at a time.
+**Goal:** The three workstreams themselves.
+**Requirements:** MCP-16…MCP-26, per the audit's breakdown.
 **Plans:** 0 plans
 
 Plans:

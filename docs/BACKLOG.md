@@ -3,8 +3,9 @@
 Shelved ideas and design notes that aren't scheduled yet. Each entry is self-contained enough
 to pick up later without re-deriving the analysis.
 
-**Priority order, as of 2026-09-22:** § "999.0 — MCP integration work" first (**scoped
-2026-09-22** — three workstreams, with phase 999.0a the conformance audit ready to promote), then
+**Priority order, as of 2026-09-24:** § "999.0 — MCP integration work" first (**scoped
+2026-09-22** — three workstreams; the audit shipped as v1.1 Phase 10 and the workstreams are
+being promoted into v1.1 one phase at a time, currently Phase 12), then
 § "Competitive gaps 2026-09-22" — seven items from a competitive read of Claude Code and
 Antigravity, parked as phases 999.1–999.7 in `.planning/ROADMAP.md` § Backlog. Everything above
 those two sections is older and unranked.
@@ -415,8 +416,11 @@ by unit test alone.
 
 ## 999.0 — MCP integration work (scoped 2026-09-22)
 
-**Status:** Scoped 2026-09-22; phase **999.0a** (conformance audit + ADRs) is ready to promote,
-999.0b–d unwritten by design. **Ranked above every other open item in this document**, including
+**Status:** Scoped 2026-09-22. **999.0a** (conformance audit + ADRs) shipped as v1.1 Phase 10
+(2026-09-23); its ruled phase breakdown lives in `docs/mcp-conformance-audit-2026-09.md`
+§ "Recommended phase breakdown", and 999.0b–d are now promoted from it one phase at a time —
+Phase 11 (resources/prompts, workstream A) complete 2026-09-24, Phase 12 (zombie-tool desync +
+reconnect, workstream C) added 2026-09-24. **Ranked above every other open item in this document**, including
 all seven competitive gaps below — that priority is a standing instruction, recorded here so it
 survives the conversation it was given in.
 

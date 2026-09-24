@@ -139,16 +139,18 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-13 | Phase 10 | Complete |
 | MCP-14 | Phase 11 | Complete |
 | MCP-15 | Phase 11 | Complete |
+| MCP-23 | Phase 12 | Pending |
+| MCP-26 | Phase 12 | Pending |
 
 **Coverage:**
-- v1.1 requirements: 14 total (12 Phase 10 + 2 Phase 11 to date)
-- Mapped to phases: 14
-- Unmapped: 0 ✓ (MCP-16…MCP-26 remain deferred, intentionally unmapped until written into a
-  future phase)
+- v1.1 requirements: 16 total (12 Phase 10 + 2 Phase 11 + 2 Phase 12 to date)
+- Mapped to phases: 16
+- Unmapped: 0 ✓ (the remaining deferred IDs — MCP-16…MCP-22, MCP-24, MCP-25 — stay
+  intentionally unmapped until written into a future phase)
 
-Deferred (MCP-16…MCP-26) are intentionally unmapped — they are written into phases only after
+Deferred requirements are intentionally unmapped — they are written into phases only after
 scoped via `/gsd:add-phase`.
 
 ---
 *Requirements defined: 2026-09-22*
-*Last updated: 2026-09-22 after milestone v1.1 definition*
+*Last updated: 2026-09-24 after Phase 12 added (MCP-23, MCP-26)*
