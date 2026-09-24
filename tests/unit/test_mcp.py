@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import time
 from dataclasses import dataclass
 
@@ -383,7 +384,9 @@ def _fake_result(**fields):
     return r
 
 
-def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=None, calls=None):
+def _install_fake_transport(
+    monkeypatch, tools, *, capabilities=None, responses=None, calls=None, init_delay: float = 0.0
+):
     """Wire a fake transport + session that lists ``tools``. Returns the recorded configs.
 
     ``capabilities``  -> the object served as ``session.server_capabilities`` (a ``_FakeCaps``);
@@ -396,6 +399,8 @@ def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=
                          drive the never-raise contract.
     ``calls``         -> an optional list the fake session appends ``(method, args, kwargs)``
                          to, so a test can assert what actually went over the wire.
+    ``init_delay``    -> seconds ``initialize()`` sleeps before returning, so a test can exceed
+                         a short ``connect_timeout_s``.
     """
     from contextlib import asynccontextmanager
 
@@ -423,6 +428,8 @@ def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=
             return False
 
         async def initialize(self):
+            if init_delay:
+                await asyncio.sleep(init_delay)
             return None
 
         async def list_tools(self):
@@ -436,9 +443,14 @@ def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=
             value = (responses or {}).get(method)
             if callable(value):
                 value = value(*args, **kwargs)
+            if inspect.isawaitable(value):
+                value = await value
             if isinstance(value, Exception):
                 raise value
             return value
+
+        async def call_tool(self, tool, arguments, **kw):
+            return await self._answer("call_tool", tool, arguments, **kw)
 
         async def list_resources(self, **kw):
             return await self._answer("list_resources", **kw)
@@ -1514,3 +1526,169 @@ def test_real_sdk_tool_object_is_understood():
     assert _tool_schema(tool)["properties"] == {"q": {"type": "string"}}
     assert _is_read_only(tool) is True
     assert _is_read_only(types.Tool(name="write", inputSchema={})) is False
+
+
+# --- Phase 13 plan 02: per-server connect/call timeouts (MCP-21) ---------------------------- #
+
+
+def test_call_timeout_uses_per_server_config(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    cfg = MCPServerConfig(command="npx", call_timeout_s=0.3)
+    _install_fake_transport(
+        monkeypatch, [_fake_tool("a")], responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)}
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        manager.start_server("srv", cfg)
+        t0 = time.monotonic()
+        with pytest.raises(mcp_client.MCPTimeout):
+            manager.call_tool("srv", "a", {})
+        assert time.monotonic() - t0 < 2.0
+    finally:
+        manager.close()
+
+
+def test_call_timeout_error_names_server_and_field(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    cfg = MCPServerConfig(command="npx", call_timeout_s=0.3)
+    _install_fake_transport(
+        monkeypatch, [_fake_tool("a")], responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)}
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        tools = manager.start_server("srv", cfg)
+        with pytest.raises(mcp_client.MCPTimeout) as excinfo:
+            manager.call_tool("srv", "a", {})
+        message = str(excinfo.value)
+        assert "'srv'" in message
+        assert "0.3s" in message
+        assert "call_timeout_s" in message
+
+        mcp_tool = next(t for t in tools if t.name == "mcp__srv__a")
+        result = mcp_tool.run(ToolCall(id="1", name=mcp_tool.name, arguments={}), ctx=None)
+        assert result.ok is False
+        assert (result.error or "").startswith("MCP call failed: MCP server 'srv'")
+    finally:
+        manager.close()
+
+
+def test_capability_call_timeout_uses_per_server_config(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    caps = _FakeCaps(prompts=_FakePromptsCap())
+    cfg = MCPServerConfig(command="npx", call_timeout_s=0.3)
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        capabilities=caps,
+        responses={"list_prompts": lambda **kw: asyncio.sleep(5)},
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        manager.start_server("srv", cfg)
+        t0 = time.monotonic()
+        with pytest.raises(mcp_client.MCPTimeout) as excinfo:
+            manager.list_prompts("srv")
+        assert time.monotonic() - t0 < 2.0
+        assert "call_timeout_s" in str(excinfo.value)
+    finally:
+        manager.close()
+
+
+def test_call_timeout_default_is_120_when_server_unconfigured(monkeypatch):
+    manager = MCPManager({})
+    assert manager._call_timeout_for("ghost") == 120.0
+
+    manager2 = MCPManager({"a": MCPServerConfig(command="x", call_timeout_s=7)})
+    assert manager2._call_timeout_for("a") == 7.0
+
+    _install_fake_transport(monkeypatch, [_fake_tool("t")])
+    manager3 = MCPManager({})
+    try:
+        manager3.start_server("b", MCPServerConfig(command="npx", call_timeout_s=9))
+        assert manager3._call_timeout_for("b") == 9.0
+        manager3.stop_server("b")
+        assert manager3._call_timeout_for("b") == 120.0
+    finally:
+        manager3.close()
+
+
+def test_max_result_chars_lookup_follows_the_same_order(monkeypatch):
+    manager = MCPManager({})
+    assert manager._max_result_chars_for("ghost") == 8000
+
+    manager2 = MCPManager({"a": MCPServerConfig(command="x", max_result_chars=123)})
+    assert manager2._max_result_chars_for("a") == 123
+
+
+def test_connect_timeout_uses_per_server_config(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    _install_fake_transport(monkeypatch, [_fake_tool("a")], init_delay=5)
+    manager = MCPManager({})
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(mcp_client.MCPTimeout) as excinfo:
+            manager.start_server("srv", MCPServerConfig(command="npx", connect_timeout_s=0.3))
+        assert time.monotonic() - t0 < 2.0
+        message = str(excinfo.value)
+        assert "'srv'" in message
+        assert "connect_timeout_s" in message
+    finally:
+        manager.close()
+
+
+def test_explicit_start_server_timeout_overrides_config(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    _install_fake_transport(monkeypatch, [_fake_tool("a")], init_delay=5)
+    manager = MCPManager({})
+    try:
+        t0 = time.monotonic()
+        with pytest.raises(mcp_client.MCPTimeout):
+            manager.start_server(
+                "srv", MCPServerConfig(command="npx", connect_timeout_s=60), timeout=0.3
+            )
+        assert time.monotonic() - t0 < 2.0
+    finally:
+        manager.close()
+
+
+def test_connect_timeout_cancels_orphaned_attempt(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    _install_fake_transport(monkeypatch, [_fake_tool("a")], init_delay=0.6)
+    manager = MCPManager({})
+    try:
+        with pytest.raises(mcp_client.MCPTimeout):
+            manager.start_server("srv", MCPServerConfig(command="npx", connect_timeout_s=0.2))
+        time.sleep(1.2)
+        assert "srv" not in manager._sessions
+        assert manager.tools_for("srv") == []
+        assert "srv" not in manager._tasks
+        assert manager.server_status("srv") is None
+    finally:
+        manager.close()
+
+
+def test_timeout_during_reconnect_backoff_names_reconnecting(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    a = _fake_tool("a")
+    cfg = MCPServerConfig(command="npx", call_timeout_s=0.2)
+    transport = _DyingTransport([_Up([a])]).install(monkeypatch)
+    monkeypatch.setattr(mcp_client, "_reconnect_backoff", lambda attempt: 5.0)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", cfg)
+        transport.kill(manager)
+        assert _wait_until(lambda: manager._server_state.get("srv") == "reconnecting")
+        t0 = time.monotonic()
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert time.monotonic() - t0 < 1.0
+        assert "is reconnecting" in str(excinfo.value)
+    finally:
+        manager.close()
