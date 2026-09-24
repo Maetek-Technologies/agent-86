@@ -325,8 +325,65 @@ def _fake_tool(name, annotations=None, schema=None):
     return t
 
 
-def _install_fake_transport(monkeypatch, tools):
-    """Wire a fake transport + session that lists ``tools``. Returns the recorded configs."""
+class _FakeResourcesCap:
+    """Stand-in for mcp.types.ResourcesCapability."""
+
+    def __init__(self, subscribe: bool = False, list_changed: bool = False):
+        self.subscribe = subscribe
+        self.list_changed = list_changed
+
+
+class _FakePromptsCap:
+    """Stand-in for mcp.types.PromptsCapability."""
+
+    def __init__(self, list_changed: bool = False):
+        self.list_changed = list_changed
+
+
+class _FakeCompletionsCap:
+    """Stand-in for mcp.types.CompletionsCapability (an empty marker class on the SDK)."""
+
+
+class _FakeCaps:
+    """Stand-in for mcp.types.ServerCapabilities.
+
+    `None` for a field is the SDK's own "this server does not support it" signal, so the
+    defaults here are all `None` — a bare `_FakeCaps()` is a server that advertises nothing.
+    """
+
+    def __init__(self, resources=None, prompts=None, completions=None, tools=None):
+        self.resources = resources
+        self.prompts = prompts
+        self.completions = completions
+        self.tools = tools
+
+
+def _fake_result(**fields):
+    """A duck-typed stand-in for any SDK result model: `_fake_result(resources=[...])`."""
+
+    class _R:
+        pass
+
+    r = _R()
+    for key, value in fields.items():
+        setattr(r, key, value)
+    return r
+
+
+def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=None, calls=None):
+    """Wire a fake transport + session that lists ``tools``. Returns the recorded configs.
+
+    ``capabilities``  -> the object served as ``session.server_capabilities`` (a ``_FakeCaps``);
+                         ``None`` means the attribute is absent entirely, which is what the
+                         pre-Phase-11 fake did and what a capability gate must treat as "no
+                         extra tools".
+    ``responses``     -> {method_name: value_or_callable} answering the resource/prompt/
+                         completion methods. A callable is invoked with the call's arguments.
+                         An ``Exception`` VALUE is raised instead of returned, so a test can
+                         drive the never-raise contract.
+    ``calls``         -> an optional list the fake session appends ``(method, args, kwargs)``
+                         to, so a test can assert what actually went over the wire.
+    """
     from contextlib import asynccontextmanager
 
     import agent86.tools.mcp_client as mcp_client
@@ -343,7 +400,8 @@ def _install_fake_transport(monkeypatch, tools):
 
     class _FakeSession:
         def __init__(self, *a, **k):
-            pass
+            if capabilities is not None:
+                self.server_capabilities = capabilities
 
         async def __aenter__(self):
             return self
@@ -359,9 +417,56 @@ def _install_fake_transport(monkeypatch, tools):
             listed.tools = tools
             return listed
 
+        async def _answer(self, method, *args, **kwargs):
+            if calls is not None:
+                calls.append((method, args, kwargs))
+            value = (responses or {}).get(method)
+            if callable(value):
+                value = value(*args, **kwargs)
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        async def list_resources(self, **kw):
+            return await self._answer("list_resources", **kw)
+
+        async def list_resource_templates(self, **kw):
+            return await self._answer("list_resource_templates", **kw)
+
+        async def read_resource(self, uri, **kw):
+            return await self._answer("read_resource", uri, **kw)
+
+        async def subscribe_resource(self, uri, **kw):
+            return await self._answer("subscribe_resource", uri, **kw)
+
+        async def unsubscribe_resource(self, uri, **kw):
+            return await self._answer("unsubscribe_resource", uri, **kw)
+
+        async def list_prompts(self, **kw):
+            return await self._answer("list_prompts", **kw)
+
+        async def get_prompt(self, name, arguments=None, **kw):
+            return await self._answer("get_prompt", name, arguments, **kw)
+
+        async def complete(self, ref, argument, context_arguments=None):
+            return await self._answer("complete", ref, argument, context_arguments)
+
     monkeypatch.setattr(mcp_client, "_open_transport", _fake_open_transport)
     monkeypatch.setattr(mcp_client, "ClientSession", _FakeSession, raising=False)
     return seen
+
+
+def test_fake_transport_without_capabilities_mounts_only_remote_tools(monkeypatch):
+    """A session with no `server_capabilities` attribute must still mount cleanly.
+
+    Guards the `getattr(session, "server_capabilities", None)` read plan 11-02 adds: an SDK or
+    fake without the property must degrade to "no synthetic tools", never AttributeError.
+    """
+    _install_fake_transport(monkeypatch, [_fake_tool("alpha")])
+    manager = MCPManager({})
+    tools = manager.start_server("srv", MCPServerConfig(command="npx"))
+    assert [t.name for t in tools] == ["mcp__srv__alpha"]
+    manager.close()
 
 
 def test_stdio_env_never_forwards_api_keys(monkeypatch):
