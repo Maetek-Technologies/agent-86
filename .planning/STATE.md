@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T12:55:48.780Z"
+last_updated: "2026-09-24T13:09:19.839Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 9
-  completed_plans: 6
+  completed_plans: 7
 ---
 
 # Project State
@@ -67,7 +67,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
-| 11 — Resources and Prompts First-Class | ◐ | 1/4 | 25% |
+| 11 — Resources and Prompts First-Class | ◐ | 2/4 | 50% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -77,6 +77,41 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 11-02 complete (MCP resources become first-class, wave 2, MCP-14 closed):**
+  `src/agent86/tools/mcp_client.py` gained five capability-gated synthetic per-server tools —
+  `mcp__{server}__list_resources`, `read_resource`, `list_resource_templates`,
+  `subscribe_resource`, `unsubscribe_resource` — built on a new shared `_MCPCapabilityTool[TArgs]`
+  base sitting beside the existing server-schema-driven `MCPTool`. `MCPManager` gained five real
+  `resources/*` call sites (`list_resources`, `list_resource_templates`, `read_resource`,
+  `subscribe_resource` with `subscribe=False` covering unsubscribe) sharing one `_on_session`
+  event-loop marshaller, and `_serve` now reads `session.server_capabilities` once and appends
+  whatever `_capability_tools` returns AFTER the server's own tools (D-04) — a server never
+  declaring `resources` gets none of the five tools offered, never a "method not found" from one
+  agent86 advertised. A binary resource's base64 is carried nowhere: `_resource_contents_to_text`
+  renders a `mime_type`/`base64_len` marker and records only that descriptor in
+  `ToolResult.metadata["binary"]` (D-02); verified against the real live fixture, whose
+  `res://agent86/blob.bin` arrives as a genuine `BlobResourceContents`, not text. Only
+  `subscribe_resource`/`unsubscribe_resource` are approval-gated (D-03). Six new unit tests pin
+  capability gating and blob non-inlining; both previously-exact tool-name-set assertions in the
+  integration suite (`test_mcp_client.py`, `test_mcp_live.py`) are now subset checks with a
+  subscribe-gate negative, plus a new real-stdio `list_resources` -> `read_resource` round trip.
+  Two auto-fixed deviations: `_on_session`'s parameter type was corrected from `Awaitable[Any]` to
+  `Coroutine[Any, Any, Any]` to satisfy `asyncio.run_coroutine_threadsafe`'s typeshed signature
+  (Rule 3, mypy was red otherwise), and one new line was collapsed to stay `ruff format`-clean
+  (Rule 1) — the two pre-existing unformatted `MCPTool` spots from before this plan (part of plan
+  10-05's already-logged 74-file `deferred-items.md` backlog) were left untouched. One structural
+  deviation, documented not fixed: Tasks 1 and 2 landed as a single commit (`a57e09f`) rather than
+  two, because Task 1's `_capability_tools` forward-references the five tool classes Task 2
+  defines — a Task-1-only commit would fail both tasks' own `mypy exits 0` acceptance criterion
+  even though the pre-existing test suite would still pass. Full suite green: 1257 passed (up from
+  1250), 0 failed; `mypy src/agent86` and `ruff check .` clean;
+  `pytest tests/integration/test_scripting_contract.py -q` green (cold-start budget unchanged —
+  only `warnings`, `collections.abc.Coroutine`/`Callable`, and `pydantic` — already a core dep —
+  were added at module top level). `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES` now implemented;
+  `CAP-RESOURCE-SUBSCRIBE` moves to `partial` per D-01 (both call sites exist; the update
+  notification itself is MCP-24). `docs/mcp-conformance-matrix.md` update deferred to plan 11-04
+  (phase signoff), matching this phase's plan structure.
 
 - 2026-09-24 — **Plan 11-01 complete (Wave 0 test machinery — live MCP fixture + fake-capabilities
   session, wave 1, both named Wave 0 gaps closed):** `tests/integration/live_mcp_server.py` gained
@@ -968,7 +1003,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 11 (resources-and-prompts-become-first-class) — EXECUTING
-Plan: 2 of 4
+Plan: 3 of 4
 Status: Ready to execute
 Last activity: 2026-09-24
 

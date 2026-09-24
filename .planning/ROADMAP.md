@@ -127,7 +127,7 @@ additive client surface, no new core dependency, and any new tool-result content
 Plans:
 - [x] 11-01-PLAN.md — the Wave 0 fixtures: resources/prompt/completion on the CI-safe live MCP
   server, and a capability-aware fake session for unit tests (wave 1)
-- [ ] 11-02-PLAN.md — resources become first-class (MCP-14): the capability-gated seam,
+- [x] 11-02-PLAN.md — resources become first-class (MCP-14): the capability-gated seam,
   list/read/templates plus subscribe/unsubscribe, and the never-inlined blob (wave 2)
 - [ ] 11-03-PLAN.md — prompts and argument completion become first-class (MCP-15): list/get
   prompts and `complete`, on the same seam (wave 3)
@@ -196,7 +196,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 1/4 plans executed
+**Plans:** 2/4 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 
