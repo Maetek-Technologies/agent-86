@@ -10,6 +10,11 @@ SEC-04 probe: it echoes this server process's own environment, letting a stdio-d
 the subprocess received ``SandboxPolicy.scrubbed_env()`` rather than the host environment.
 ``AGENT86_LIVE_MCP_PID_FILE``, if set, makes this process write its own PID to that path
 immediately before serving, so a lifecycle test can find and kill it mid-session (MCP-26/23).
+``AGENT86_LIVE_MCP_EXTRA_TOOLS=1`` mounts five additional opt-in tools (``sleep_for``,
+``big_text``, ``tiny_image``, ``tiny_audio``, ``mixed_blocks``) that exercise Phase 13's
+per-server timeouts, the result cap, and real ImageContent/AudioContent/EmbeddedResource/
+ResourceLink content blocks — gated behind the env var so the fixture's default tool set, which
+several tests assert exactly, is unchanged.
 
 Built on ``mcp.server.mcpserver.MCPServer`` — the SDK's own server API since mcp 2.0, which
 serves both transports as ASGI apps over uvicorn. (``mcp.server.fastmcp`` is gone: FastMCP
@@ -18,11 +23,17 @@ moved out of the SDK, which is what left this test permanently skipped.)
 
 from __future__ import annotations
 
+import base64
 import os
 import sys
 from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
+
+#: The two Phase 13 content-block probes (see AGENT86_LIVE_MCP_EXTRA_TOOLS below). Importable by
+#: the test so it can assert their base64 never appears in a rendered marker.
+IMAGE_BYTES = b"\x89PNG\r\n\x1a\nagent86-image-probe"
+AUDIO_BYTES = b"RIFF\x00\x00\x00\x00WAVEagent86-audio-probe"
 
 #: The completion values `complete_argument` offers for the `review_code` prompt's `style`
 #: argument. A module constant so a test can import it instead of re-spelling the list.
@@ -81,6 +92,56 @@ def main() -> None:
             values = [s for s in STYLE_COMPLETIONS if s.startswith(argument.value or "")]
             return Completion(values=values, total=len(values), has_more=False)
         return None
+
+    # Opt-in, test-only (Phase 13): tools that exercise per-server timeouts, the result cap and
+    # non-text content blocks. Behind an env flag so the default tool set — asserted exactly by
+    # several tests — is unchanged.
+    if os.environ.get("AGENT86_LIVE_MCP_EXTRA_TOOLS") == "1":
+        import anyio
+        from mcp.server.mcpserver import Audio, Image
+        from mcp.types import BlobResourceContents, EmbeddedResource, ResourceLink
+
+        @mcp.tool()
+        async def sleep_for(seconds: float) -> str:
+            """Sleep, then answer — the call_timeout_s probe."""
+            await anyio.sleep(seconds)
+            return "slept"
+
+        @mcp.tool()
+        def big_text(n: int) -> str:
+            """Return n characters — the max_result_chars probe."""
+            return "x" * n
+
+        @mcp.tool()
+        def tiny_image():
+            """A real ImageContent block."""
+            return Image(data=IMAGE_BYTES, format="png")
+
+        @mcp.tool()
+        def tiny_audio():
+            """A real AudioContent block."""
+            return Audio(data=AUDIO_BYTES, format="wav")
+
+        @mcp.tool()
+        def mixed_blocks():
+            """Text, an embedded binary resource and a resource link in one result."""
+            return [
+                "before",
+                EmbeddedResource(
+                    type="resource",
+                    resource=BlobResourceContents(
+                        uri="res://agent86/blob.bin",
+                        mime_type="application/octet-stream",
+                        blob=base64.b64encode(b"agent86-embedded-probe").decode(),
+                    ),
+                ),
+                ResourceLink(
+                    type="resource_link",
+                    name="greeting",
+                    uri="res://agent86/greeting.txt",
+                    mime_type="text/plain",
+                ),
+            ]
 
     # Opt-in, test-only: lets a lifecycle test find and kill THIS process mid-session (MCP-26/23).
     # A file, not a tool, so the fixture's tool set — which several tests assert exactly — is
