@@ -1,11 +1,12 @@
 ---
 phase: 11
 slug: resources-and-prompts-become-first-class
-status: planned
-nyquist_compliant: false
+status: complete
+nyquist_compliant: true
 wave_0_complete: true
 created: 2026-09-23
 planned: 2026-09-23
+evidence: 11-EVIDENCE.md
 ---
 
 # Phase 11 — Validation Strategy
@@ -52,13 +53,13 @@ Wave 0 work at `wave: 1`.
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
 | 11-01 T1 | 11-01 | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ✅ landed — `live_mcp_server.py` extended with `.resource()` / `.prompt()` / `.completion()` | ✅ green |
 | 11-01 T2 | 11-01 | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ✅ landed — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ✅ green |
-| 11-02 T3 | 11-02 | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
-| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
-| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
-| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k prompt -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
-| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k complete -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
-| 11-03 T3 | 11-03 | 1 | MCP-15 | unit | `pytest tests/unit/test_mcp.py -k prompts_capability -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
-| 11-04 T2 | 11-04 | 2 | SC3 (docs) | docs | `pytest tests/unit/test_docs_consistency.py -q` | ✅ exists (enforces matrix *shape*, not rating) | ⬜ pending |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ✅ landed — `test_list_resources_then_read_resource_round_trip` (real stdio, plan 11-02 T3) | ✅ green (1 passed) |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ✅ landed — 3 capability-gating tests (plan 11-02 T3) | ✅ green (3 passed) |
+| 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ✅ landed — `test_blob_resource_content_is_never_inlined` (plan 11-02 T3) | ✅ green (1 passed) |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k prompt -q` | ✅ landed — `test_list_prompts_then_get_prompt_round_trip` (real stdio, plan 11-03 T3) | ✅ green (1 passed) |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | integration | `pytest tests/integration/test_mcp_client.py -k complete -q` | ✅ landed — `test_complete_returns_argument_suggestions` (real stdio, plan 11-03 T3) | ✅ green (1 passed) |
+| 11-03 T3 | 11-03 | 1 | MCP-15 | unit | `pytest tests/unit/test_mcp.py -k prompts_capability -q` | ✅ landed — 2 capability-gating tests (plan 11-03 T3) | ✅ green (2 passed) |
+| 11-04 T2 | 11-04 | 2 | SC3 (docs) | docs | `pytest tests/unit/test_docs_consistency.py -q` | ✅ landed — four rows `implemented`, `CAP-RESOURCE-SUBSCRIBE` `partial`, all ruled `in` (plan 11-04 T2) | ✅ green (7 passed) |
 
 *Task IDs filled by the planner 2026-09-23; the rows above are the required verification surface.*
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -101,22 +102,25 @@ fixture code during planning: `resources={'subscribe': False, 'list_changed': Fa
 
 ## Manual-Only Verifications
 
-| Behavior | Requirement | Why Manual | Test Instructions |
-|----------|-------------|------------|-------------------|
-| Real `list_resources` → `read_resource` round-trip against `@modelcontextprotocol/server-filesystem`, file content reaching the model | Roadmap SC1 | Phase 10 ruling D-03: CI must stay network-free and `npx`-free | Scratchpad script, same pattern as the MCP-07 run in `docs/mcp-conformance-audit-2026-09.md`; transcript recorded in `11-EVIDENCE.md` by plan 11-04 Task 1 |
-| `list_prompts`/`get_prompt` return `server-everything`'s 3 prompts; `complete()` returns suggestions for its `completable` argument | Roadmap SC2 | Same as SC1 | Scratchpad script against pinned `server-everything@2026.8.31` (re-verified 2026-09-23 via `npm view`); record real prompt name + argument name in `11-EVIDENCE.md` |
-| Four matrix rows ruled `absent` → `implemented` | Roadmap SC3 | The *rating* is a human/plan judgement; only the matrix shape is machine-checked | Plan 11-04 Task 2 edits `docs/mcp-conformance-matrix.md` only after the full suite is green and both evidence runs above are recorded |
+| Behavior | Requirement | Why Manual | Test Instructions | Recorded |
+|----------|-------------|------------|-------------------|----------|
+| Real `list_resources` → `read_resource` round-trip against `@modelcontextprotocol/server-filesystem`, file content reaching the model | Roadmap SC1 | Phase 10 ruling D-03: CI must stay network-free and `npx`-free | Scratchpad script, same pattern as the MCP-07 run in `docs/mcp-conformance-audit-2026-09.md`; transcript recorded in `11-EVIDENCE.md` by plan 11-04 Task 1 | Recorded in 11-EVIDENCE.md — **not met**: `server-filesystem@2026.8.31` declares no `resources` capability at all (`Method not found`); file text reaches the caller only via `tools/read_text_file`, not `resources/read` |
+| `list_prompts`/`get_prompt` return `server-everything`'s 3 prompts; `complete()` returns suggestions for its `completable` argument | Roadmap SC2 | Same as SC1 | Scratchpad script against pinned `server-everything@2026.8.31` (re-verified 2026-09-23 via `npm view`); record real prompt name + argument name in `11-EVIDENCE.md` | Recorded in 11-EVIDENCE.md — **met**: 4 prompts returned (roadmap anticipated 3); `completable-prompt`'s `department` argument returns real suggestions |
+| Four matrix rows ruled `absent` → `implemented` | Roadmap SC3 | The *rating* is a human/plan judgement; only the matrix shape is machine-checked | Plan 11-04 Task 2 edits `docs/mcp-conformance-matrix.md` only after the full suite is green and both evidence runs above are recorded | Recorded — matrix edited in plan 11-04 Task 2, citing 11-EVIDENCE.md |
 
 ---
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references (`live_mcp_server.py` fixtures, fake capabilities session)
-- [ ] No watch-mode flags
-- [ ] Feedback latency < 20s
-- [ ] Both manual live-evidence runs (SC1, SC2) recorded before the matrix is edited
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [x] All tasks have `<automated>` verify or Wave 0 dependencies
+- [x] Sampling continuity: no 3 consecutive tasks without automated verify
+- [x] Wave 0 covers all MISSING references (`live_mcp_server.py` fixtures, fake capabilities session)
+- [x] No watch-mode flags
+- [x] Feedback latency < 20s
+- [x] Both manual live-evidence runs (SC1, SC2) recorded before the matrix is edited — SC1's real,
+      recorded verdict is **not met** (`server-filesystem@2026.8.31` declares no `resources`
+      capability), SC2's is **met**; both transcripts landed in `11-EVIDENCE.md` before
+      `docs/mcp-conformance-matrix.md` was touched (plan 11-04 Task 2)
+- [x] `nyquist_compliant` set to `true` in frontmatter
 
-**Approval:** pending
+**Approval:** complete 2026-09-24

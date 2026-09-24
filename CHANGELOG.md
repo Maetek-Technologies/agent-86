@@ -6,6 +6,20 @@ All notable changes to agent86 are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **MCP resources, prompts and argument completion are first-class.** A mounted server's
+  `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`,
+  `resources/unsubscribe`, `prompts/list`, `prompts/get` and `completion/complete` are now real
+  call sites, surfaced to the model as per-server tools gated on the capabilities the server
+  advertised at `initialize()` — so a tools-only server's tool list is unchanged. Binary resource
+  content is summarised, never inlined as base64; a non-text prompt block renders as a named
+  marker rather than a Python repr. Resource *update notifications* are still dropped
+  (`message_handler` is a later phase), so `subscribe_resource` records intent only, and is
+  approval-gated for that reason. Closes MCP-14 and MCP-15, moving `CAP-RESOURCES`,
+  `CAP-RESOURCE-TEMPLATES`, `CAP-PROMPTS` and `CAP-COMPLETION` to `implemented` in
+  [`docs/mcp-conformance-matrix.md`](docs/mcp-conformance-matrix.md).
+
 ### Changed
 
 - **Development Status classifier is now `5 - Production/Stable`.** 1.0.0 is published on PyPI

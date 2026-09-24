@@ -339,6 +339,14 @@ given explicitly (`stdio` | `sse` | `http`). Add `enabled = false` to keep a ser
 unmounted. Inspect with `agent86 mcp list` and `agent86 mcp tools`. Requires the `mcp` extra
 (`pip install -e ".[mcp]"`).
 
+A mounted server's **resources, prompt templates and argument completions** are mounted as tools
+too, not just its `tools/*` surface: `mcp__<server>__list_resources`, `read_resource`,
+`list_resource_templates`, `subscribe_resource`, `unsubscribe_resource`, `list_prompts`,
+`get_prompt` and `complete`. Each one appears **only if the server advertised the matching
+capability** when it connected, so `agent86 mcp tools` on a tools-only server looks exactly as it
+did before. A binary resource is summarised by mime type and size rather than returned as base64,
+and `subscribe_resource`/`unsubscribe_resource` are approval-gated while the reads are not.
+
 ## Skills
 
 A skill is a folder with a `SKILL.md` in it: YAML frontmatter the harness reads, and a body of
