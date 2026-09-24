@@ -1134,6 +1134,206 @@ def test_complete_sends_a_prompt_reference_over_the_wire(monkeypatch):
     assert argument == {"name": "style", "value": "c"}
 
 
+# --- Plan 12-03: bounded reconnect after a drop (MCP-23) ------------------------------------- #
+
+
+def _patch_reconnect(monkeypatch, *, max_attempts=3, backoff=lambda attempt: 0.0):
+    """Every reconnect test wants a fast, deterministic budget unless it says otherwise."""
+    import agent86.tools.mcp_client as mcp_client
+
+    monkeypatch.setattr(mcp_client, "_MAX_RECONNECT_ATTEMPTS", max_attempts)
+    monkeypatch.setattr(mcp_client, "_reconnect_backoff", backoff)
+
+
+def test_reconnect_after_drop_restores_tools(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a]), _Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" in manager._sessions and transport.connects == 2)
+        assert [t.name for t in manager.tools_for("srv")] == ["mcp__srv__a"]
+        assert transport.connects == 2
+        assert manager.call_tool("srv", "a", {}) == "ok"
+        assert any("MCP server 'srv' reconnected" in n for n in manager.notes)
+    finally:
+        manager.close()
+
+
+def test_reconnect_repopulates_from_fresh_list_tools_and_capabilities(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    b = _fake_tool("b")
+    transport = _DyingTransport(
+        [_Up([a]), _Up([b], caps=_FakeCaps(prompts=_FakePromptsCap()))]
+    ).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(
+            lambda: (
+                {t.name for t in manager.tools_for("srv")}
+                == {"mcp__srv__b", "mcp__srv__list_prompts", "mcp__srv__get_prompt"}
+            )
+        )
+        assert transport.list_calls == 2
+    finally:
+        manager.close()
+
+
+def test_reconnect_gives_up_after_bounded_attempts(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a]), RuntimeError("refused")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: manager._tasks["srv"].done())
+        assert transport.connects == 1 + 3
+        assert manager._server_state["srv"] == "disconnected"
+        assert manager.tools_for("srv") == []
+        assert any("did not reconnect after 3 attempts" in n for n in manager.notes)
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert "'srv'" in str(excinfo.value)
+    finally:
+        manager.close()
+
+
+def test_reconnect_notes_each_attempt(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a]), RuntimeError("refused")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: manager._tasks["srv"].done())
+        joined = "\n".join(manager.notes)
+        assert "reconnecting (attempt 1 of 3)" in joined
+        assert "(attempt 2 of 3)" in joined
+        assert "(attempt 3 of 3)" in joined
+    finally:
+        manager.close()
+
+
+def test_reconnect_error_names_server_while_reconnecting(monkeypatch):
+    _patch_reconnect(monkeypatch, backoff=lambda attempt: 5.0)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: manager._server_state.get("srv") == "reconnecting")
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert "'srv'" in str(excinfo.value)
+        assert "is reconnecting" in str(excinfo.value)
+    finally:
+        t0 = time.monotonic()
+        manager.close()
+        assert time.monotonic() - t0 < 3.0
+
+
+def test_reconnect_stop_during_backoff_is_not_retried(monkeypatch):
+    _patch_reconnect(monkeypatch, backoff=lambda attempt: 5.0)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: manager._server_state.get("srv") == "reconnecting")
+        t0 = time.monotonic()
+        manager.stop_server("srv")
+        assert time.monotonic() - t0 < 2.0
+        time.sleep(0.3)
+        assert transport.connects == 1
+        assert "srv" not in manager._server_state
+    finally:
+        manager.close()
+
+
+def test_reconnect_never_follows_stop_server(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        manager.stop_server("srv")
+        time.sleep(0.3)
+        assert transport.connects == 1
+        assert not any("reconnecting" in n for n in manager.notes)
+    finally:
+        manager.close()
+
+
+def test_reconnect_first_connect_failure_is_not_retried(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    transport = _DyingTransport([RuntimeError("nope")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        with pytest.raises(RuntimeError, match="nope"):
+            manager.start_server("srv", MCPServerConfig(command="npx"))
+        assert transport.connects == 1
+    finally:
+        manager.close()
+
+
+def test_reconnect_emits_removed_then_added_to_listener(monkeypatch):
+    _patch_reconnect(monkeypatch)
+    a = _fake_tool("a")
+    b = _fake_tool("b")
+    transport = _DyingTransport([_Up([a]), _Up([b])]).install(monkeypatch)
+    manager = MCPManager({})
+    seen: list = []
+    manager.on_tools_changed = lambda s, removed, added: seen.append(
+        (s, [t.name for t in removed], [t.name for t in added])
+    )
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: len(seen) == 2)
+        assert seen == [
+            ("srv", ["mcp__srv__a"], []),
+            ("srv", [], ["mcp__srv__b"]),
+        ]
+    finally:
+        manager.close()
+
+
+def test_reconnect_resets_budget_after_success(monkeypatch):
+    _patch_reconnect(monkeypatch, max_attempts=1)
+    a = _fake_tool("a")
+    transport = _DyingTransport([_Up([a]), _Up([a]), _Up([a])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" in manager._sessions and transport.connects == 2)
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" in manager._sessions and transport.connects == 3)
+    finally:
+        manager.close()
+
+
+def test_reconnect_backoff_is_bounded_and_jittered():
+    import agent86.tools.mcp_client as mcp_client
+
+    assert mcp_client._reconnect_backoff(1, jitter=lambda lo, hi: hi) == 1.0
+    assert mcp_client._reconnect_backoff(1, jitter=lambda lo, hi: lo) == 0.5
+    assert (
+        mcp_client._reconnect_backoff(20, jitter=lambda lo, hi: hi)
+        == mcp_client._RECONNECT_MAX_DELAY_S
+    )
+
+
 def test_real_sdk_tool_object_is_understood():
     """Regression guard: mcp>=2 renamed Tool.inputSchema to input_schema.
 
