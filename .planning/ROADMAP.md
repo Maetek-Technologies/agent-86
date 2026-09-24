@@ -221,12 +221,12 @@ additive-only.
 **Plans**: 6 plans in 4 waves
 
 Plans:
-- [ ] 13-01-PLAN.md — live pinned-corpus result-size audit + MCP-25 before-evidence →
+- [x] 13-01-PLAN.md — live pinned-corpus result-size audit + MCP-25 before-evidence →
   `13-EVIDENCE.md`, with the written ruling on the 8,000 default (wave 1, MCP-22, MCP-25)
-- [ ] 13-02-PLAN.md — `MCPServerConfig.connect_timeout_s`/`call_timeout_s`/`max_result_chars`;
+- [x] 13-02-PLAN.md — `MCPServerConfig.connect_timeout_s`/`call_timeout_s`/`max_result_chars`;
   per-server timeouts at `start_server`/`call_tool`/`_on_session`, overruns named and cancelled
   (wave 1, MCP-21, MCP-22)
-- [ ] 13-03-PLAN.md — pure `render_content_block` + `truncate_result` in new
+- [x] 13-03-PLAN.md — pure `render_content_block` + `truncate_result` in new
   `tools/mcp_content.py` (wave 1, TDD, MCP-22, MCP-25)
 - [ ] 13-04-PLAN.md — wire the cap and renderer into `_content_to_text`, `read_resource`,
   `get_prompt`; `is_error` prefix fix (wave 2, MCP-22, MCP-25)
@@ -315,7 +315,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 8/8 plans complete
+**Plans:** 3/6 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
