@@ -8,6 +8,7 @@ only ever talks to the registry, never to concrete tools.
 from __future__ import annotations
 
 import logging
+import threading
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
@@ -45,11 +46,17 @@ class ToolRegistry:
         #: can show the user which of their MCP tools are NOT callable — silently dropping a
         #: tool the user configured looks like the server failed to connect.
         self.collisions: list[str] = []
+        #: MCP death/reconnect (MCP-26/MCP-23) mutates the registry from the MCP manager's
+        #: background event-loop thread while the harness thread reads it via
+        #: specs()/names()/dispatch(). RLock (not a plain Lock) so dispatch can call names()
+        #: for its error text while still holding the lock for the lookup.
+        self._lock = threading.RLock()
 
     def register(self, tool: Tool) -> None:
-        if tool.name in self._tools:
-            raise ValueError(f"Tool '{tool.name}' is already registered.")
-        self._tools[tool.name] = tool
+        with self._lock:
+            if tool.name in self._tools:
+                raise ValueError(f"Tool '{tool.name}' is already registered.")
+            self._tools[tool.name] = tool
 
     def try_register(self, tool: Tool) -> bool:
         """Register ``tool`` unless its name is taken; record and log the clash if it is.
@@ -57,15 +64,16 @@ class ToolRegistry:
         The lenient path used when mounting many tools at startup, where one collision must
         not abort the run — but must not vanish either.
         """
-        if tool.name not in self._tools:
-            self._tools[tool.name] = tool
-            return True
-        detail = f"'{tool.name}' (already provided by another tool"
-        if len(tool.name) >= _MCP_NAME_LIMIT:
-            detail += f"; names are truncated to {_MCP_NAME_LIMIT} characters"
-        self.collisions.append(tool.name)
-        logger.warning("Tool name collision: %s) — this tool is not callable.", detail)
-        return False
+        with self._lock:
+            if tool.name not in self._tools:
+                self._tools[tool.name] = tool
+                return True
+            detail = f"'{tool.name}' (already provided by another tool"
+            if len(tool.name) >= _MCP_NAME_LIMIT:
+                detail += f"; names are truncated to {_MCP_NAME_LIMIT} characters"
+            self.collisions.append(tool.name)
+            logger.warning("Tool name collision: %s) — this tool is not callable.", detail)
+            return False
 
     def unregister(self, name: str) -> bool:
         """Remove one tool by name; True if it was present (D-14).
@@ -74,19 +82,39 @@ class ToolRegistry:
         without rebuilding the whole registry — leaving them mounted would let the model invoke
         something the user just deleted.
         """
-        return self._tools.pop(name, None) is not None
+        with self._lock:
+            return self._tools.pop(name, None) is not None
+
+    def unregister_tool(self, tool: Tool) -> bool:
+        """Remove ``tool`` only if it is the object registered under its name.
+
+        An MCP server that dies mid-session reports the Tool objects it had mounted (MCP-26).
+        If one of those names lost a startup collision, the registered owner is a DIFFERENT
+        tool (a built-in, or another server's) — removing by name alone would delete the
+        wrong one.
+        """
+        with self._lock:
+            if self._tools.get(tool.name) is tool:
+                del self._tools[tool.name]
+                return True
+            return False
 
     def get(self, name: str) -> Tool | None:
-        return self._tools.get(name)
+        with self._lock:
+            return self._tools.get(name)
 
     def names(self) -> list[str]:
-        return sorted(self._tools)
+        with self._lock:
+            return sorted(self._tools)
 
     def specs(self) -> list[ToolSpec]:
-        return [t.spec() for t in self._tools.values()]
+        with self._lock:
+            tools = list(self._tools.values())
+        return [t.spec() for t in tools]
 
     def dispatch(self, call: ToolCall, ctx: ToolContext) -> ToolResult:
-        tool = self._tools.get(call.name)
+        with self._lock:
+            tool = self._tools.get(call.name)
         if tool is None:
             return ToolResult(
                 call_id=call.id,
