@@ -389,6 +389,26 @@ class _SessionEnd(NamedTuple):
     tools: list[Tool]
 
 
+def _is_connection_closed(exc: BaseException) -> bool:
+    """True only for the SDK's own local end-of-connection fan-out (code CONNECTION_CLOSED).
+
+    Decided on the error CODE the dispatcher stamps when its read stream ends, never on the
+    exception type alone: MCPError is also what a healthy server's ordinary JSON-RPC error
+    raises (research Pitfall 3), and that must reach the model unchanged.
+    """
+    try:
+        from mcp.shared import exceptions as mcp_exceptions
+        from mcp.types import CONNECTION_CLOSED
+    except ImportError:
+        return False
+    error_cls = getattr(mcp_exceptions, "MCPError", None) or getattr(
+        mcp_exceptions, "McpError", None
+    )
+    if error_cls is None or not isinstance(exc, error_cls):
+        return False
+    return getattr(getattr(exc, "error", None), "code", None) == CONNECTION_CLOSED
+
+
 def _get_client_session() -> Any:
     """Return ``mcp.ClientSession``, looked up through this module's own globals first.
 
@@ -731,16 +751,53 @@ class MCPManager:
         asyncio.set_event_loop(self._loop)
         self._loop.run_forever()
 
+    def _unavailable_error(
+        self, server: str, cause: BaseException | None = None
+    ) -> MCPServerUnavailable:
+        """The single source of every "no live session" message (exact strings; MCP-26 SC2).
+
+        Tests and plan 12-03's reconnect loop depend on these exact strings — change them there
+        too if you change them here.
+        """
+        state = self._server_state.get(server)
+        if state == "reconnecting":
+            reason = self._disconnect_cause.get(server, "the transport closed")
+            attempt = self._reconnect_attempt.get(server, 1)
+            message = (
+                f"MCP server '{server}' disconnected ({reason}) and is reconnecting "
+                f"(attempt {attempt} of {_MAX_RECONNECT_ATTEMPTS}); try again shortly."
+            )
+        elif state == "disconnected":
+            reason = self._disconnect_cause.get(server, "the transport closed")
+            message = (
+                f"MCP server '{server}' disconnected ({reason}); its tools are unavailable "
+                "until it is restarted from /config mcp."
+            )
+        elif state == "connected" and cause is not None:
+            message = (
+                f"MCP server '{server}' closed the connection during the call "
+                f"({_describe(cause)})."
+            )
+        else:
+            message = f"MCP server '{server}' is not connected."
+        return MCPServerUnavailable(server, message)
+
     def call_tool(self, server: str, tool: str, arguments: dict) -> str:
-        if self._loop is None or server not in self._sessions:
-            raise RuntimeError("MCP session not available")
-        session = self._sessions[server]
+        loop = self._loop
+        session = self._sessions.get(server)
+        if loop is None or session is None:
+            raise self._unavailable_error(server)
 
         async def _call() -> str:
             result = await session.call_tool(tool, arguments)
             return _content_to_text(result)
 
-        return asyncio.run_coroutine_threadsafe(_call(), self._loop).result(timeout=120)
+        try:
+            return asyncio.run_coroutine_threadsafe(_call(), loop).result(timeout=120)
+        except Exception as exc:
+            if self._server_state.get(server) != "connected" or _is_connection_closed(exc):
+                raise self._unavailable_error(server, exc) from exc
+            raise
 
     def _on_session(
         self,
@@ -754,12 +811,18 @@ class MCPManager:
         ``run_coroutine_threadsafe(...).result(timeout=...)`` shape ``call_tool`` already uses.
         The 120-second default is deliberately the same hardcoded number: per-server
         configurable timeouts are MCP-21 (workstream C), and a second timeout knob here would
-        pre-empt that ruling.
+        pre-empt that ruling. Unavailable-session errors name the server (MCP-26).
         """
-        if self._loop is None or server not in self._sessions:
-            raise RuntimeError("MCP session not available")
-        session = self._sessions[server]
-        return asyncio.run_coroutine_threadsafe(call(session), self._loop).result(timeout=timeout)
+        loop = self._loop
+        session = self._sessions.get(server)
+        if loop is None or session is None:
+            raise self._unavailable_error(server)
+        try:
+            return asyncio.run_coroutine_threadsafe(call(session), loop).result(timeout=timeout)
+        except Exception as exc:
+            if self._server_state.get(server) != "connected" or _is_connection_closed(exc):
+                raise self._unavailable_error(server, exc) from exc
+            raise
 
     def list_resources(self, server: str) -> tuple[str, dict[str, Any]]:
         """``resources/list`` — a single page, matching ``list_tools()``'s existing behaviour.
@@ -1183,6 +1246,7 @@ __all__ = [
     "MCPListResourcesTool",
     "MCPManager",
     "MCPReadResourceTool",
+    "MCPServerUnavailable",
     "MCPSubscribeResourceTool",
     "MCPTool",
     "MCPUnsubscribeResourceTool",
