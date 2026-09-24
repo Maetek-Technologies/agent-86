@@ -737,6 +737,108 @@ def test_read_resource_failure_is_a_soft_tool_result(monkeypatch):
     assert "boom" in (result.error or "")
 
 
+def test_prompts_capability_mounts_the_prompt_tools(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("alpha")],
+        capabilities=_FakeCaps(prompts=_FakePromptsCap()),
+    )
+    manager = MCPManager({})
+    names = [t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))]
+    assert names == [
+        "mcp__srv__alpha",  # the server's own tool comes FIRST (D-04)
+        "mcp__srv__list_prompts",
+        "mcp__srv__get_prompt",
+    ]
+    manager.close()
+
+
+def test_completions_capability_mounts_only_the_complete_tool(monkeypatch):
+    _install_fake_transport(
+        monkeypatch, [], capabilities=_FakeCaps(completions=_FakeCompletionsCap())
+    )
+    manager = MCPManager({})
+    names = [t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))]
+    assert names == ["mcp__srv__complete"]
+    manager.close()
+
+
+def test_absent_prompts_capability_mounts_no_prompt_tools(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("alpha")],
+        capabilities=_FakeCaps(),  # everything None
+    )
+    manager = MCPManager({})
+    names = [t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))]
+    assert names == ["mcp__srv__alpha"]
+    manager.close()
+
+
+def test_non_text_prompt_block_is_marked_not_repred(monkeypatch):
+    class _Img:
+        pass
+
+    messages = [_fake_result(role="user", content=_Img())]
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(prompts=_FakePromptsCap()),
+        responses={
+            "get_prompt": lambda name, arguments, **kw: _fake_result(
+                description=None, messages=messages
+            )
+        },
+    )
+    manager = MCPManager({})
+    tools = {t.name: t for t in manager.start_server("srv", MCPServerConfig(command="npx"))}
+    result = tools["mcp__srv__get_prompt"].run(
+        ToolCall(id="1", name="mcp__srv__get_prompt", arguments={"name": "review_code"}),
+        ctx=None,
+    )
+    manager.close()
+    assert result.ok
+    assert "non-text content block:" in result.content
+    assert "object at 0x" not in result.content
+    assert "<" not in result.content
+
+
+def test_complete_sends_a_prompt_reference_over_the_wire(monkeypatch):
+    calls: list = []
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(completions=_FakeCompletionsCap()),
+        responses={
+            "complete": lambda ref, argument, context: _fake_result(
+                completion=_fake_result(values=["concise"], total=1, has_more=False)
+            )
+        },
+        calls=calls,
+    )
+    manager = MCPManager({})
+    tool = manager.start_server("srv", MCPServerConfig(command="npx"))[0]
+    result = tool.run(
+        ToolCall(
+            id="1",
+            name="mcp__srv__complete",
+            arguments={
+                "ref_type": "prompt",
+                "ref": "review_code",
+                "argument_name": "style",
+                "argument_value": "c",
+            },
+        ),
+        ctx=None,
+    )
+    manager.close()
+    assert result.ok and result.content == "concise"
+    method, args, _ = next(c for c in calls if c[0] == "complete")
+    ref, argument, _context = args
+    assert ref.name == "review_code" and ref.type == "ref/prompt"
+    assert argument == {"name": "style", "value": "c"}
+
+
 def test_real_sdk_tool_object_is_understood():
     """Regression guard: mcp>=2 renamed Tool.inputSchema to input_schema.
 

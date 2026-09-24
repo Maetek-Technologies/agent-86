@@ -95,6 +95,9 @@ def test_per_server_start_lists_real_tools():
             "mcp__alpha__list_resources",
             "mcp__alpha__read_resource",
             "mcp__alpha__list_resource_templates",
+            "mcp__alpha__list_prompts",
+            "mcp__alpha__get_prompt",
+            "mcp__alpha__complete",
         } <= names
         # The fixture's MCPServer declares resources.subscribe = False and cannot declare it
         # True, so the subscribe gate must hold here (plan 11-01, Task 1).
@@ -219,5 +222,44 @@ def test_list_resources_then_read_resource_round_trip():
         assert "not inlined" in binary
         assert "agent86-binary-probe" not in binary
         assert binary_meta["binary"][0]["base64_len"] > 0
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_list_prompts_then_get_prompt_round_trip():
+    """MCP-15 end to end over real stdio: the prompt list, then a rendered prompt."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
+        listing, meta = manager.list_prompts("alpha")
+        assert "review_code" in listing
+        assert meta["count"] >= 1
+
+        body, body_meta = manager.get_prompt(
+            "alpha", "review_code", {"path": "a.py", "style": "concise"}
+        )
+        assert "Review the file at a.py in a concise style." in body
+        assert body.lstrip().startswith("Review") or "[user]:" in body
+        assert body_meta["prompt"] == "review_code"
+        assert "non_text_blocks" not in body_meta
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_complete_returns_argument_suggestions():
+    """CAP-COMPLETION end to end: the server's own completion handler answers."""
+    from tests.integration.live_mcp_server import STYLE_COMPLETIONS  # noqa: PLC0415
+
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
+        every, meta = manager.complete("alpha", "prompt", "review_code", "style", "")
+        assert set(every.splitlines()) == set(STYLE_COMPLETIONS)
+        assert meta["count"] == len(STYLE_COMPLETIONS)
+
+        filtered, _ = manager.complete("alpha", "prompt", "review_code", "style", "s")
+        assert filtered.splitlines() == ["security-focused"]
     finally:
         manager.close()
