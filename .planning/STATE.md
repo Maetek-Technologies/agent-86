@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T15:43:08.375Z"
+last_updated: "2026-09-24T15:49:32.798Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 16
-  completed_plans: 14
+  completed_plans: 15
 ---
 
 # Project State
@@ -77,6 +77,27 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 12-06 complete (real reconnect + remote-transport kill-detection evidence,
+  wave 3, MCP-23 and MCP-26 both closed):** `tests/integration/test_mcp_client.py` gained
+  `test_mid_session_kill_reconnects_with_fresh_tools` — kills a real `live_mcp_server.py` stdio
+  subprocess and, running under the shipped default `_MAX_RECONNECT_ATTEMPTS = 5` (no
+  monkeypatched constants), asserts within a bounded 30s poll that a new process comes back
+  (different pid), a fresh `list_tools()`-derived tool set (`{"add", "shout", "get_env"}`) is
+  callable again, a `"MCP server 'alpha' reconnected"` note was recorded, and the *same* owning
+  task is still running — proving SC3/MCP-23 end-to-end against a real re-spawned process, not
+  just plan 12-03's fake-transport unit tests or plan 12-05's no-retry (`attempts=0`) kill test.
+  `tests/integration/test_mcp_live.py` gained `test_live_transport_mid_session_kill_is_detected`,
+  parametrized over both remote transports, closing 12-RESEARCH.md's Open Question 4 (previously
+  LOW confidence, reasoned but not verified) with real evidence: a killed SSE server is detected
+  **passively** (end-of-stream on the read side, caught directly by plan 12-01's
+  `_EOFWatchStream`); a killed streamable-HTTP server is detected **on the next call** (the POST
+  failing into `_serve_once`'s outer `except` once `post_writer`'s task group crashes). Both then
+  correctly raise `RuntimeError` naming `'live'`. No accepted-risk xfail was needed for either
+  transport. No production code changed — both new tests passed against the existing 12-01/12-03
+  detection and reconnect code with no modification. Full suite green: **1300 passed** (up from
+  1264), 0 failed; `mypy src/agent86` and `ruff check .` clean; `git status --porcelain src/`
+  empty throughout, matching this plan's test-only ownership boundary.
 
 - 2026-09-24 — **Plan 11-04 complete (phase signoff — live evidence and conformance re-ruling,
   wave 4 — final plan, Phase 11 now 4/4 complete, MCP-14/MCP-15 both closed):** Two scratchpad
@@ -1075,7 +1096,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 12 (Fix the zombie-tool desync and add reconnect) — EXECUTING
-Plan: 6 of 7
+Plan: 7 of 7
 Status: Ready to execute
 planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24

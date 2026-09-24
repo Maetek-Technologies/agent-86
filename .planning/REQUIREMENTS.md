@@ -139,8 +139,8 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-13 | Phase 10 | Complete |
 | MCP-14 | Phase 11 | Complete |
 | MCP-15 | Phase 11 | Complete |
-| MCP-23 | Phase 12 | Pending |
-| MCP-26 | Phase 12 | Pending |
+| MCP-23 | Phase 12 | Complete |
+| MCP-26 | Phase 12 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 16 total (12 Phase 10 + 2 Phase 11 + 2 Phase 12 to date)

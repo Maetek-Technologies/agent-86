@@ -176,7 +176,7 @@ Plans:
 - [x] 12-04-PLAN.md — Harness wires `on_tools_changed` into its registry so dead tools leave the
   model's tool list (wave 2)
 - [x] 12-05-PLAN.md — real-stdio kill-mid-session integration test via a fixture pid file (wave 2)
-- [ ] 12-06-PLAN.md — real-stdio reconnect test + SSE/streamable-HTTP kill tests or recorded
+- [x] 12-06-PLAN.md — real-stdio reconnect test + SSE/streamable-HTTP kill tests or recorded
   accepted risk (wave 3)
 - [ ] 12-07-PLAN.md — docs, VALIDATION sign-off, phase gate, TUI human-verify (wave 4)
 
@@ -256,7 +256,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 5/7 plans executed
+**Plans:** 6/7 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
