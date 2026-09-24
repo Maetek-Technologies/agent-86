@@ -165,7 +165,7 @@ session is running); `run --json` keys additive-only.
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 15 (renumbered 12 on promotion); defect first
 flagged in [../docs/BACKLOG.md](../docs/BACKLOG.md) § 999.0 audit head start, confirmed by Phase 10
-**Plans**: 7 plans in 4 waves
+**Plans**: 8 plans in 4 waves
 
 Plans:
 - [x] 12-01-PLAN.md — end-of-stream death detection, both dicts popped, named-server errors,
@@ -179,6 +179,9 @@ Plans:
 - [x] 12-06-PLAN.md — real-stdio reconnect test + SSE/streamable-HTTP kill tests or recorded
   accepted risk (wave 3)
 - [ ] 12-07-PLAN.md — docs, VALIDATION sign-off, phase gate, TUI human-verify (wave 4)
+- [ ] 12-08-PLAN.md — gap closure: MCP drop/reconnect notes pushed live to the TUI, `/tools`
+  server state, plain-loop drain; start-failure note unwraps ExceptionGroups and quotes the stdio
+  child's stderr tail (wave 4, MCP-26, MCP-23)
 
 ## Next
 
