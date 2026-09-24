@@ -356,3 +356,56 @@ def test_unknown_compaction_mode_is_rejected(monkeypatch, tmp_path):
     monkeypatch.setattr(config_mod, "PROJECT_CONFIG_PATH", tmp_path / "none.toml")
     with pytest.raises(pydantic.ValidationError):
         load_config()
+
+
+# --- Phase 13 plan 02: per-server MCP connect/call timeouts + max_result_chars (MCP-21/22) ---- #
+
+
+def test_mcp_server_config_default_timeouts():
+    cfg = MCPServerConfig(command="npx")
+    assert cfg.connect_timeout_s == 30.0
+    assert cfg.call_timeout_s == 120.0
+
+
+def test_mcp_server_config_max_result_chars_defaults_to_8000():
+    assert MCPServerConfig(url="https://x/mcp").max_result_chars == 8000
+
+
+def test_mcp_server_config_override_is_per_server(monkeypatch, tmp_path):
+    user = tmp_path / "config.toml"
+    user.write_text(
+        textwrap.dedent(
+            """
+            [mcp.servers.slow]
+            command = "npx"
+            connect_timeout_s = 90.0
+            call_timeout_s = 600.0
+            max_result_chars = 50000
+
+            [mcp.servers.fast]
+            command = "npx"
+            """
+        )
+    )
+    monkeypatch.setattr(config_mod, "USER_CONFIG_PATH", user)
+    monkeypatch.setattr(config_mod, "PROJECT_CONFIG_PATH", tmp_path / "none.toml")
+
+    cfg = load_config()
+    slow = cfg.mcp_servers["slow"]
+    assert slow.connect_timeout_s == 90.0
+    assert slow.call_timeout_s == 600.0
+    assert slow.max_result_chars == 50000
+
+    fast = cfg.mcp_servers["fast"]
+    assert fast.connect_timeout_s == 30.0
+    assert fast.call_timeout_s == 120.0
+    assert fast.max_result_chars == 8000
+
+
+def test_mcp_server_config_rejects_non_positive_limits():
+    with pytest.raises(ValidationError):
+        MCPServerConfig(command="npx", connect_timeout_s=0)
+    with pytest.raises(ValidationError):
+        MCPServerConfig(command="npx", call_timeout_s=-1)
+    with pytest.raises(ValidationError):
+        MCPServerConfig(command="npx", max_result_chars=0)

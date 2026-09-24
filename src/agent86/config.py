@@ -355,6 +355,17 @@ class ObservabilityConfig(BaseModel):
         return Path(os.path.expanduser(self.path))
 
 
+#: MCP connect budget: how long start_server() waits for transport + initialize() + list_tools().
+#: 30 s is the value hardcoded in MCPManager.start_server before MCP-21 — generous enough for a
+#: first-run `npx` package download.
+DEFAULT_MCP_CONNECT_TIMEOUT_S = 30.0
+#: MCP per-call budget for tools/call and every capability call (resources/prompts/completion).
+#: 120 s is the value hardcoded in call_tool/_on_session before MCP-21.
+DEFAULT_MCP_CALL_TIMEOUT_S = 120.0
+#: Prompt-side cap on one MCP result's text (ADR 0004): ~2,000 tokens at ~4 chars/token.
+DEFAULT_MCP_MAX_RESULT_CHARS = 8_000
+
+
 class MCPServerConfig(BaseModel):
     """A configured MCP server, reached over one of three transports.
 
@@ -378,6 +389,17 @@ class MCPServerConfig(BaseModel):
     # (D-09). Lives in the server's own block so a hand-edited config reads naturally and a
     # toggle is a one-line diff.
     enabled: bool = True
+    # How long start_server() waits for this server's transport + initialize() + list_tools()
+    # before raising MCPTimeout (MCP-21). A server that is merely slow (e.g. a first-run `npx`
+    # download) should raise this rather than being mistaken for a hung one.
+    connect_timeout_s: float = Field(default=DEFAULT_MCP_CONNECT_TIMEOUT_S, gt=0)
+    # How long a single tools/call (or capability call: resources/prompts/completion) waits
+    # before raising MCPTimeout (MCP-21). Exceeding this cancels the in-flight request.
+    call_timeout_s: float = Field(default=DEFAULT_MCP_CALL_TIMEOUT_S, gt=0)
+    # Prompt-side cap (ADR 0004) on one call's joined result text. Exceeding it truncates with a
+    # visible marker — it never drops silently and never raises. Behaviour lands in plan 13-04;
+    # this is the schema half only.
+    max_result_chars: int = Field(default=DEFAULT_MCP_MAX_RESULT_CHARS, gt=0)
 
     @model_validator(mode="after")
     def _resolve_transport(self) -> MCPServerConfig:
