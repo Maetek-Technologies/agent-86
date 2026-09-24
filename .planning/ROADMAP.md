@@ -59,7 +59,7 @@ implementation phases are now written from its recommended breakdown
  (completed 2026-09-24)
   mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
   closing MCP-26 and MCP-23
-- [ ] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C:
+- [x] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C: (completed 2026-09-24)
   configurable connect/call timeouts, ADR 0004's visible result cap, and real rendering of
   image/audio/embedded-resource blocks, closing MCP-21, MCP-22 and MCP-25
 
@@ -232,7 +232,7 @@ Plans:
   `get_prompt`; `is_error` prefix fix (wave 2, MCP-22, MCP-25)
 - [x] 13-05-PLAN.md — real-stdio fixture tools (opt-in) + integration tests for all three SCs
   (wave 3, MCP-21, MCP-22, MCP-25)
-- [ ] 13-06-PLAN.md — after-evidence, docs, `CAP-CONTENT-BLOCKS` → implemented, VALIDATION
+- [x] 13-06-PLAN.md — after-evidence, docs, `CAP-CONTENT-BLOCKS` → implemented, VALIDATION
   sign-off, phase gate (wave 4)
 
 ## Next
@@ -315,7 +315,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 

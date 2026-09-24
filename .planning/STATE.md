@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: executing
-last_updated: "2026-09-24T18:39:40.713Z"
+status: verifying
+last_updated: "2026-09-24T18:52:10.357Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 4
-  completed_phases: 3
+  completed_phases: 4
   total_plans: 23
-  completed_plans: 22
+  completed_plans: 23
 ---
 
 # Project State
@@ -47,13 +47,17 @@ outranks MCP integration work.
 
 ## Milestone
 
-**v1.1 — MCP integration depth** (in progress)
-2 phases (Phase 10 — MCP conformance audit; Phase 11 — resources and prompts become first-class)
-| 1 phase complete
+**v1.1 — MCP integration depth** (4/4 phases plan-complete; awaiting final phase-gate
+verification for Phase 13)
+4 phases (Phase 10 — MCP conformance audit; Phase 11 — resources and prompts become first-class;
+Phase 12 — fix the zombie-tool desync and add reconnect; Phase 13 — per-server timeouts, the
+result cap, and non-text content)
 
 Phase 10 was deliberately the only phase at milestone start: A/B/C could not be sized until the
-matrix ruled on them. It ruled 2026-09-23, so the implementation phases are now promoted one at a
-time from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown".
+matrix ruled on them. It ruled 2026-09-23, so the implementation phases were promoted one at a
+time from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Phase 13 —
+per-server timeouts (MCP-21), the result cap (MCP-22) and non-text content rendering (MCP-25) —
+is now plan-complete (6/6 plans, 23/23 total plans across the milestone).
 
 Previous: **v1.0 — Release** — 1 phase, 9 requirements (OBS-01…OBS-04, PKG-01, PKG-02,
 HARD-01…HARD-03), complete, released as v1.0.0.
@@ -69,6 +73,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
 | 11 — Resources and Prompts First-Class | ● | 4/4 | 100% |
 | 12 — Fix the Zombie-Tool Desync and Add Reconnect | ● | 8/8 | 100% |
+| 13 — Per-Server Timeouts, the Result Cap, and Non-Text Content | ● | 6/6 | 100% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -78,6 +83,39 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 13-06 complete (phase signoff — live after-evidence, docs, and validation
+  sign-off, wave 4 — final plan, Phase 13 now 6/6 complete, MCP-21/MCP-22/MCP-25 all closed with
+  after-fix evidence):** Task 1 re-ran 13-01's exact `server-everything@2026.8.31` non-text-block
+  calls (`get-tiny-image`, `get-resource-links`, `get-resource-reference`,
+  `gzip-file-as-resource`) and one over-cap `server-filesystem@2026.8.31` `read_text_file`
+  call through the FIXED `agent86.tools.mcp_client.MCPManager` (not the raw SDK 13-01 used),
+  appending a new `## After the fix (plans 13-02..13-05)` section to `13-EVIDENCE.md` next to the
+  before-evidence: every non-text block now renders as a named marker with no inlined base64 and
+  no Python repr, and `README.md`'s 47,415-char uncapped result truncates to exactly 8,000 chars
+  plus a 149-char marker naming the server and the dropped count (39,415) at the default cap, then
+  reproduces the identical 47,415-char figure with `max_result_chars=200000` configured — the
+  override raises the ceiling with no other change to the text. Task 2 documented all three
+  changes: CHANGELOG `[Unreleased]` gained per-server-timeout (MCP-21), result-cap (MCP-22, citing
+  the live corpus audit's over-cap tool list) and non-text-content-rendering (MCP-25, including the
+  discovered `is_error`/`isError` SDK-rename defect) entries, and corrected the stale MCP-23
+  bullet's "per-server configurable retry/backoff is MCP-21" phrase; README gained a "Timeouts and
+  the result cap are per server" paragraph naming the three new `[mcp.servers.<name>]` keys and
+  `mcp-server-git`'s `git_show` as the worked "no narrowing argument" override example;
+  `ARCHITECTURE.md` §7 gained two sentences and the config reference block gained the three new
+  fields plus a "Fields added in v1.1" line, and §15 lost the `CAP-CONTENT-BLOCKS` row (a new
+  departure note replaces it); `docs/mcp-conformance-matrix.md` re-ruled `CAP-CONTENT-BLOCKS`
+  `implemented`/`in`, updated `CAP-TOOLS-CALL`'s reasoning cell, and marked both the
+  per-server-timeouts and prompt-side-result-cap "Not rated here" bullets closed by Phase 13; no
+  ADR was added or edited, keeping `test_docs_consistency.py`'s four-ADR pin satisfied. Task 3
+  signed off `13-VALIDATION.md` against real results — every `TBD` cell replaced with a real
+  `13-0x-0y` task ID, plan and wave and the real passing command output, all Wave 0 and Sign-Off
+  checkboxes ticked, `nyquist_compliant: true`. Full phase gate green: `pytest -q` 1367 passed
+  (unchanged from 13-05 — this plan added no test), 0 failed; `mypy src/agent86` and
+  `ruff check .` both clean; `pytest tests/unit/test_docs_consistency.py -q` 7 passed;
+  `pytest tests/integration/test_mcp_client.py tests/integration/test_mcp_live.py -q` 29 passed.
+  No deviations. **Phase 13 is now complete: 6/6 plans, MCP-21/MCP-22/MCP-25 all closed, evidenced
+  live before and after the fix — the v1.1 milestone's 4 phases are all now plan-complete.**
 
 - 2026-09-24 — **Plan 13-05 complete (real-stdio proof of per-server timeouts, the result cap and
   non-text content, wave 3, MCP-21/MCP-22/MCP-25 all closed with live evidence):**
@@ -1224,7 +1262,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 Phase: 13 (Per-server timeouts, the result cap, and non-text content) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 phases 14+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
