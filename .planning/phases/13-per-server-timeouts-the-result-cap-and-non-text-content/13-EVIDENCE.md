@@ -152,3 +152,70 @@ in this run) has no way to be shrunk except by raising `max_result_chars` for th
 over-cap tool in this audit lacks a narrowing argument entirely.
 
 **Verdict:** complete
+
+## After the fix (plans 13-02..13-05)
+
+**Gathered:** 2026-09-24 · **Runner:** a throwaway scratchpad script (never committed) using the
+FIXED client — `agent86.tools.mcp_client.MCPManager({})` / `start_server(name, MCPServerConfig(...),
+timeout=...)` / `call_tool(server, tool, arguments)` — the same production code path every mounted
+tool call goes through today, not the raw SDK the "before" run above used. **Environment:** node
+v22.22.0, npx.cmd 10.9.4, `.venv` Python 3.12.10, `mcp` SDK 2.0.0 (unchanged from the before-run).
+The same four `server-everything@2026.8.31` calls 13-01 recorded above, plus one over-cap
+`server-filesystem@2026.8.31` `read_text_file` call (the largest row in "Results above 8,000
+characters," `README.md`) run twice — once at the server's default `max_result_chars` (8,000) and
+once with `max_result_chars = 200000` configured — closing the loop on both MCP-25 (non-text
+blocks) and MCP-22 (the cap) with the same corpus member the before-evidence used.
+
+**`get-tiny-image` (1x `ImageContent` block) — before: a 5,449-char `str(chunk)` repr with the raw
+base64 PNG inlined. After:**
+```
+Here's the image you requested:
+[image content: mime_type=image/png base64_len=5380 — not inlined]
+The image above is the MCP logo.
+```
+`len()` = 131. base64 inlined: no. repr present: no.
+
+**`get-resource-links` (3x `ResourceLink` blocks) — before: three `str(chunk)` reprs
+(`name='Blob Resource 1' title=None uri=... mime_type='text/plain' size=None ...`). After:**
+```
+Here are 3 resource links to resources available in this server:
+[resource link uri=demo://resource/dynamic/blob/1 name=Blob Resource 1 mime_type=text/plain size=unknown]
+[resource link uri=demo://resource/dynamic/text/2 name=Text Resource 2 mime_type=text/plain size=unknown]
+[resource link uri=demo://resource/dynamic/blob/3 name=Blob Resource 3 mime_type=text/plain size=unknown]
+```
+`len()` = 382. base64 inlined: no. repr present: no.
+
+**`get-resource-reference` (1x `EmbeddedResource`, `TextResourceContents`) — before: one
+`str(chunk)` repr (`type='resource' resource=TextResourceContents(uri=... mime_type='text/plain'
+... text='Resource 1: ...') ...`). After:**
+```
+Returning resource reference for Resource 1:
+[embedded resource uri=demo://resource/dynamic/text/1 mime_type=text/plain]
+Resource 1: This is a plaintext resource created at 2:42:26 PM
+You can access this resource using the URI: demo://resource/dynamic/text/1
+```
+`len()` = 258. base64 inlined: no. repr present: no.
+
+**`gzip-file-as-resource` (1x `ResourceLink`) — before: one `str(chunk)` repr
+(`name='README.md.gz' title=None uri=... mime_type='application/gzip' size=None ...`). After:**
+```
+[resource link uri=demo://resource/session/README.md.gz name=README.md.gz mime_type=application/gzip size=unknown]
+```
+`len()` = 114. base64 inlined: no. repr present: no.
+
+**`server-filesystem@2026.8.31` `read_text_file` on `README.md` — the largest "Results above
+8,000 characters" row (47,415 chars uncapped, unchanged in this run) — at the server's default
+`max_result_chars` (8,000, not explicitly configured):**
+```
+...t fits itself to the
+available width and sheds whole segments in a fixed order: the `[Shift+Tab]` hin
+…[truncated 39415 chars: result exceeded max_result_chars=8000 for MCP server 'files'; raise
+max_result_chars under [mcp.servers.files] to see more]
+```
+`len()` = 8,149 (8,000-char body + the 149-char marker). The visible marker names the server
+(`files`), the field (`max_result_chars`) and the exact dropped count (39,415 = 47,415 − 8,000).
+Re-run with `max_result_chars = 200000` configured for the same server: `len()` = 47,415 —
+byte-identical to 13-01's uncapped before-evidence number for this same file, confirming the
+override raises the ceiling with no other change to the text.
+
+**After-fix verdict:** complete
