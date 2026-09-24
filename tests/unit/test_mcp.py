@@ -1536,7 +1536,9 @@ def test_call_timeout_uses_per_server_config(monkeypatch):
 
     cfg = MCPServerConfig(command="npx", call_timeout_s=0.3)
     _install_fake_transport(
-        monkeypatch, [_fake_tool("a")], responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)}
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)},
     )
     manager = MCPManager({"srv": cfg})
     try:
@@ -1554,7 +1556,9 @@ def test_call_timeout_error_names_server_and_field(monkeypatch):
 
     cfg = MCPServerConfig(command="npx", call_timeout_s=0.3)
     _install_fake_transport(
-        monkeypatch, [_fake_tool("a")], responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)}
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: asyncio.sleep(5)},
     )
     manager = MCPManager({"srv": cfg})
     try:

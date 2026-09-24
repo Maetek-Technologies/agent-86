@@ -31,7 +31,12 @@ from typing import Any, Generic, Literal, NamedTuple, TextIO, TypeVar, cast
 
 from pydantic import BaseModel, Field
 
-from agent86.config import Config, MCPServerConfig
+from agent86.config import (
+    DEFAULT_MCP_CALL_TIMEOUT_S,
+    DEFAULT_MCP_MAX_RESULT_CHARS,
+    Config,
+    MCPServerConfig,
+)
 from agent86.tools.base import EmptyArgs, Tool, ToolContext
 from agent86.types import ToolCall, ToolResult, ToolSpec
 
@@ -39,8 +44,9 @@ logger = logging.getLogger(__name__)
 
 _NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 
-#: Reconnect budget after a mid-session drop (MCP-23). Hardcoded on purpose: per-server
-#: timeout/retry config is MCP-21's ruling, not this phase's.
+#: Reconnect budget after a mid-session drop (MCP-23). Deliberately NOT per-server config:
+#: MCP-21 made the connect/call timeouts configurable (MCPServerConfig.connect_timeout_s /
+#: call_timeout_s); the reconnect attempt count and backoff window stay fixed module constants.
 _MAX_RECONNECT_ATTEMPTS = 5
 _RECONNECT_BASE_DELAY_S = 0.5
 _RECONNECT_MAX_DELAY_S = 30.0
@@ -83,6 +89,18 @@ class MCPServerUnavailable(RuntimeError):
 
     A RuntimeError subclass so every existing ``except RuntimeError`` / ``pytest.raises(
     RuntimeError)`` keeps working."""
+
+    def __init__(self, server: str, message: str) -> None:
+        super().__init__(message)
+        self.server = server
+
+
+class MCPTimeout(TimeoutError):
+    """An MCP connect or call exceeded its per-server budget (MCP-21).
+
+    The message names the server and the config field to raise, so a slow-but-legitimate
+    server can be told apart from a hung one by config rather than a code change.
+    """
 
     def __init__(self, server: str, message: str) -> None:
         super().__init__(message)
@@ -658,6 +676,7 @@ class MCPManager:
         self._close_events: dict[str, Any] = {}  # name -> asyncio.Event
         self._server_tools: dict[str, list[Tool]] = {}
         self._started = False
+        self._active_cfg: dict[str, MCPServerConfig] = {}  # name -> cfg start_server() launched
         self._server_state: dict[str, str] = {}  # name -> "connected"|"reconnecting"|"disconnected"
         self._disconnect_cause: dict[str, str] = {}  # name -> human-readable reason for last drop
         self._reconnect_attempt: dict[str, int] = {}  # name -> current attempt (used by 12-03)
@@ -769,6 +788,18 @@ class MCPManager:
                 statuses[name] = "not connected"
         return statuses
 
+    def _server_cfg(self, server: str) -> MCPServerConfig | None:
+        """The cfg governing ``server``'s limits: the one actually launched, else configured."""
+        return self._active_cfg.get(server) or self.servers.get(server)
+
+    def _call_timeout_for(self, server: str) -> float:
+        cfg = self._server_cfg(server)
+        return cfg.call_timeout_s if cfg is not None else DEFAULT_MCP_CALL_TIMEOUT_S
+
+    def _max_result_chars_for(self, server: str) -> int:
+        cfg = self._server_cfg(server)
+        return cfg.max_result_chars if cfg is not None else DEFAULT_MCP_MAX_RESULT_CHARS
+
     def _emit_tools_changed(self, name: str, removed: list[Tool], added: list[Tool]) -> None:
         """Call ``on_tools_changed`` if set. Never raises — this runs on the loop thread."""
         if self.on_tools_changed is None:
@@ -805,28 +836,63 @@ class MCPManager:
         self,
         name: str,
         cfg: MCPServerConfig,
-        timeout: float = 30.0,
+        timeout: float | None = None,
         overrides: dict[str, str] | None = None,
     ) -> list[Tool]:
         """Open one server's transport and return its tools. Blocks the caller until ready.
 
         Raises on connection failure or timeout — the connection-test modal surfaces it verbatim
         (D-19/D-20). On success the server's owning task stays parked until `stop_server`.
+        ``timeout`` defaults to ``cfg.connect_timeout_s``; an explicit value (the TUI connection
+        test's own cap) wins.
         """
         self._ensure_loop()
         assert self._loop is not None
         if name in self._tasks:
             self.stop_server(name)
         resolved = _resolve_server_secrets(cfg, overrides)
+        budget = timeout if timeout is not None else cfg.connect_timeout_s
+        self._active_cfg[name] = cfg
         fut = asyncio.run_coroutine_threadsafe(self._launch(name, resolved), self._loop)
         try:
-            tools = fut.result(timeout=timeout)
-        except Exception:
+            tools = fut.result(timeout=budget)
+        except Exception as exc:
+            timed_out = isinstance(exc, TimeoutError) and not fut.done()
+            if timed_out:
+                self._abort_launch(name, fut)
             self._tasks.pop(name, None)
             self._close_events.pop(name, None)
             self._server_tools.pop(name, None)
+            self._active_cfg.pop(name, None)
+            if timed_out:
+                raise MCPTimeout(
+                    name,
+                    f"MCP server '{name}' did not finish connecting within {budget:g}s "
+                    f"(connect_timeout_s); if it is slow rather than hung, raise "
+                    f"connect_timeout_s under [mcp.servers.{name}].",
+                ) from exc
             raise
         return tools
+
+    def _abort_launch(self, name: str, fut: Any) -> None:
+        """Cancel a first connect that overran its budget, so it can never mount tools later.
+
+        Runs the pop+cancel ON the loop thread: `_launch` registers the task synchronously on
+        that thread, so doing it there cannot interleave with `_launch` half-way through.
+        """
+        fut.cancel()
+        loop = self._loop
+        if loop is None:
+            return
+
+        async def _abort() -> None:
+            task = self._tasks.pop(name, None)
+            self._close_events.pop(name, None)
+            if task is not None:
+                task.cancel()
+
+        with suppress(Exception):
+            asyncio.run_coroutine_threadsafe(_abort(), loop).result(timeout=5)
 
     async def _launch(self, name: str, cfg: MCPServerConfig) -> list[Tool]:
         close_event = asyncio.Event()
@@ -997,6 +1063,12 @@ class MCPManager:
                 )
             except BaseException as exc:  # noqa: BLE001
                 if not ready.done():
+                    if isinstance(exc, asyncio.CancelledError):
+                        # An orphaned connect's own task was cancelled by _abort_launch
+                        # (MCP-21's connect-timeout budget) — ready may already be cancelled
+                        # too (Task.cancel() cancels the future it's parked on); do not try to
+                        # set an exception on a future that may already be done/cancelled.
+                        return
                     ready.set_exception(exc)  # first connect: unchanged, no retry
                     return
                 if not isinstance(exc, Exception) or close_event.is_set():
@@ -1061,6 +1133,7 @@ class MCPManager:
         self._server_state.pop(name, None)
         self._disconnect_cause.pop(name, None)
         self._reconnect_attempt.pop(name, None)
+        self._active_cfg.pop(name, None)
         if close_event is None or task is None or self._loop is None:
             return
 
@@ -1133,6 +1206,26 @@ class MCPManager:
             message = f"MCP server '{server}' is not connected."
         return MCPServerUnavailable(server, message)
 
+    def _await_result(self, server: str, fut: Any, what: str) -> Any:
+        """Wait for ``fut`` within the server's call_timeout_s; name the server on every failure."""
+        budget = self._call_timeout_for(server)
+        try:
+            return fut.result(timeout=budget)
+        except Exception as exc:
+            if isinstance(exc, TimeoutError) and not fut.done():
+                fut.cancel()  # don't leave the request running on the loop
+                if self._server_state.get(server) != "connected":
+                    raise self._unavailable_error(server, exc) from exc
+                raise MCPTimeout(
+                    server,
+                    f"MCP server '{server}' did not answer {what} within {budget:g}s "
+                    f"(call_timeout_s); if it is slow rather than hung, raise call_timeout_s "
+                    f"under [mcp.servers.{server}].",
+                ) from exc
+            if self._server_state.get(server) != "connected" or _is_connection_closed(exc):
+                raise self._unavailable_error(server, exc) from exc
+            raise
+
     def call_tool(self, server: str, tool: str, arguments: dict) -> str:
         loop = self._loop
         session = self._sessions.get(server)
@@ -1143,37 +1236,29 @@ class MCPManager:
             result = await session.call_tool(tool, arguments)
             return _content_to_text(result)
 
-        try:
-            return asyncio.run_coroutine_threadsafe(_call(), loop).result(timeout=120)
-        except Exception as exc:
-            if self._server_state.get(server) != "connected" or _is_connection_closed(exc):
-                raise self._unavailable_error(server, exc) from exc
-            raise
+        return self._await_result(
+            server, asyncio.run_coroutine_threadsafe(_call(), loop), f"'{tool}'"
+        )
 
     def _on_session(
         self,
         server: str,
         call: Callable[[Any], Coroutine[Any, Any, Any]],
-        timeout: float = 120,
     ) -> Any:
         """Run ``call(session)`` on the MCP event loop and return its result.
 
         The synchronous entry point every capability call site shares — same guard, same
         ``run_coroutine_threadsafe(...).result(timeout=...)`` shape ``call_tool`` already uses.
-        The 120-second default is deliberately the same hardcoded number: per-server
-        configurable timeouts are MCP-21 (workstream C), and a second timeout knob here would
-        pre-empt that ruling. Unavailable-session errors name the server (MCP-26).
+        The budget is the server's ``call_timeout_s`` (MCP-21), shared with ``call_tool``.
+        Unavailable-session errors name the server (MCP-26).
         """
         loop = self._loop
         session = self._sessions.get(server)
         if loop is None or session is None:
             raise self._unavailable_error(server)
-        try:
-            return asyncio.run_coroutine_threadsafe(call(session), loop).result(timeout=timeout)
-        except Exception as exc:
-            if self._server_state.get(server) != "connected" or _is_connection_closed(exc):
-                raise self._unavailable_error(server, exc) from exc
-            raise
+        return self._await_result(
+            server, asyncio.run_coroutine_threadsafe(call(session), loop), "a capability request"
+        )
 
     def list_resources(self, server: str) -> tuple[str, dict[str, Any]]:
         """``resources/list`` — a single page, matching ``list_tools()``'s existing behaviour.
