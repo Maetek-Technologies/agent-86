@@ -1696,3 +1696,331 @@ def test_timeout_during_reconnect_backoff_names_reconnecting(monkeypatch):
         assert "is reconnecting" in str(excinfo.value)
     finally:
         manager.close()
+
+
+# --- Phase 13 plan 04: the result cap and non-text content rendering (MCP-22, MCP-25) -------- #
+
+
+def test_call_tool_result_truncates_at_max_result_chars(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    cfg = MCPServerConfig(command="npx", max_result_chars=100)
+    result = types.CallToolResult(content=[types.TextContent(type="text", text="y" * 250)])
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        manager.start_server("srv", cfg)
+        out = manager.call_tool("srv", "a", {})
+        assert out.startswith("y" * 100)
+        assert "…[truncated 150 chars" in out
+        assert "max_result_chars" in out
+        assert "'srv'" in out
+        assert out.count("y") == 100
+    finally:
+        manager.close()
+
+
+def test_result_cap_default_8000_when_unconfigured(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+
+    def _respond(tool, arguments, **kw):
+        n = arguments["n"]
+        return types.CallToolResult(content=[types.TextContent(type="text", text="a" * n)])
+
+    _install_fake_transport(
+        monkeypatch, [_fake_tool("a")], responses={"call_tool": _respond}
+    )
+    manager = MCPManager({})
+    try:
+        cfg = MCPServerConfig(command="npx")
+        manager.start_server("srv", cfg)
+        over = manager.call_tool("srv", "a", {"n": 8_500})
+        assert "…[truncated 500 chars" in over
+
+        exact = manager.call_tool("srv", "a", {"n": 8_000})
+        assert "truncated" not in exact
+        assert exact == "a" * 8_000
+    finally:
+        manager.close()
+
+
+def test_truncated_error_result_keeps_error_prefix(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    cfg = MCPServerConfig(command="npx", max_result_chars=100)
+    result = types.CallToolResult(
+        content=[types.TextContent(type="text", text="z" * 300)], is_error=True
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        manager.start_server("srv", cfg)
+        out = manager.call_tool("srv", "a", {})
+        assert out.startswith("ERROR: " + "z" * 100)
+        assert "…[truncated 200 chars" in out
+    finally:
+        manager.close()
+
+
+def test_call_tool_error_result_is_prefixed_on_sdk2_is_error(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[types.TextContent(type="text", text="boom")], is_error=True
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert out == "ERROR: boom"
+    finally:
+        manager.close()
+
+
+def test_read_resource_truncates_at_max_result_chars(monkeypatch):
+    cfg = MCPServerConfig(command="npx", max_result_chars=50)
+    contents = [_fake_result(uri="res://x/a", text="r" * 120)]
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap()),
+        responses={"read_resource": lambda uri, **kw: _fake_result(contents=contents)},
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        tools = {t.name: t for t in manager.start_server("srv", cfg)}
+        result = tools["mcp__srv__read_resource"].run(
+            ToolCall(id="1", name="mcp__srv__read_resource", arguments={"uri": "res://x/a"}),
+            ctx=None,
+        )
+        assert result.ok
+        assert result.content.startswith("r" * 50)
+        assert "…[truncated 70 chars" in result.content
+    finally:
+        manager.close()
+
+
+def test_get_prompt_truncates_at_max_result_chars(monkeypatch):
+    cfg = MCPServerConfig(command="npx", max_result_chars=40)
+    messages = [_fake_result(role="user", content=_fake_result(text="m" * 200))]
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(prompts=_FakePromptsCap()),
+        responses={
+            "get_prompt": lambda name, arguments, **kw: _fake_result(
+                description=None, messages=messages
+            )
+        },
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        tools = {t.name: t for t in manager.start_server("srv", cfg)}
+        result = tools["mcp__srv__get_prompt"].run(
+            ToolCall(id="1", name="mcp__srv__get_prompt", arguments={"name": "review_code"}),
+            ctx=None,
+        )
+        assert result.ok
+        assert "…[truncated " in result.content
+        assert "max_result_chars" in result.content
+    finally:
+        manager.close()
+
+
+def test_call_tool_image_content_block_renders_marker(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[types.ImageContent(type="image", data="QUJDREVGR0g=", mime_type="image/png")]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert out == "[image content: mime_type=image/png base64_len=12 — not inlined]"
+        assert "QUJDREVGR0g=" not in out
+        assert "ImageContent(" not in out
+    finally:
+        manager.close()
+
+
+def test_call_tool_audio_content_block_renders_marker(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[types.AudioContent(type="audio", data="QUJDREVGR0g=", mime_type="audio/wav")]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert out == "[audio content: mime_type=audio/wav base64_len=12 — not inlined]"
+        assert "QUJDREVGR0g=" not in out
+    finally:
+        manager.close()
+
+
+def test_call_tool_embedded_text_resource_is_inlined(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[
+            types.EmbeddedResource(
+                type="resource",
+                resource=types.TextResourceContents(
+                    uri="res://x/a.txt", mime_type="text/plain", text="inner"
+                ),
+            )
+        ]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert "[embedded resource uri=" in out
+        assert out.endswith("inner")
+    finally:
+        manager.close()
+
+
+def test_call_tool_embedded_blob_resource_not_inlined(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[
+            types.EmbeddedResource(
+                type="resource",
+                resource=types.BlobResourceContents(
+                    uri="res://x/p.png", mime_type="image/png", blob="QUJD"
+                ),
+            )
+        ]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert "base64_len=4 — not inlined" in out
+        assert "QUJD" not in out
+    finally:
+        manager.close()
+
+
+def test_call_tool_resource_link_renders_fields(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[
+            types.ResourceLink(
+                type="resource_link",
+                name="readme",
+                uri="file:///r.md",
+                mime_type="text/markdown",
+                size=120,
+            )
+        ]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert "[resource link uri=" in out
+        assert "name=" in out
+    finally:
+        manager.close()
+
+
+def test_call_tool_mixed_content_blocks_join_in_order(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    result = types.CallToolResult(
+        content=[
+            types.TextContent(type="text", text="before"),
+            types.ImageContent(type="image", data="QUJD", mime_type="image/png"),
+            types.TextContent(type="text", text="after"),
+        ]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        lines = out.split("\n")
+        assert lines[0] == "before"
+        assert lines[-1] == "after"
+        assert any("image content" in line for line in lines)
+    finally:
+        manager.close()
+
+
+def test_call_tool_unknown_content_block_never_repr(monkeypatch):
+    class Weird:
+        pass
+
+    result = _fake_result(content=[Weird()])
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        out = manager.call_tool("srv", "a", {})
+        assert out == "[non-text content block: Weird — not inlined]"
+    finally:
+        manager.close()
+
+
+def test_call_tool_images_are_never_inlined_even_under_cap(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    cfg = MCPServerConfig(command="npx", max_result_chars=1_000_000)
+    data = "Q" * 5_000
+    result = types.CallToolResult(
+        content=[types.ImageContent(type="image", data=data, mime_type="image/png")]
+    )
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        responses={"call_tool": lambda tool, arguments, **kw: result},
+    )
+    manager = MCPManager({"srv": cfg})
+    try:
+        manager.start_server("srv", cfg)
+        out = manager.call_tool("srv", "a", {})
+        assert data not in out
+    finally:
+        manager.close()
