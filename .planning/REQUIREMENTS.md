@@ -141,7 +141,7 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-15 | Phase 11 | Complete |
 | MCP-23 | Phase 12 | Complete |
 | MCP-26 | Phase 12 | Complete |
-| MCP-21 | Phase 13 | Pending |
+| MCP-21 | Phase 13 | Complete |
 | MCP-22 | Phase 13 | Complete |
 | MCP-25 | Phase 13 | Complete |
 

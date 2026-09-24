@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T18:28:29.739Z"
+last_updated: "2026-09-24T18:39:40.713Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 23
-  completed_plans: 21
+  completed_plans: 22
 ---
 
 # Project State
@@ -78,6 +78,33 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 13-05 complete (real-stdio proof of per-server timeouts, the result cap and
+  non-text content, wave 3, MCP-21/MCP-22/MCP-25 all closed with live evidence):**
+  `tests/integration/live_mcp_server.py` gained five opt-in tools behind
+  `AGENT86_LIVE_MCP_EXTRA_TOOLS=1` — `sleep_for` (the `call_timeout_s` probe), `big_text` (the
+  `max_result_chars` probe), `tiny_image`/`tiny_audio` (real `mcp.server.mcpserver.Image`/`Audio`
+  returns), and `mixed_blocks` (text plus a real binary `EmbeddedResource` plus a `ResourceLink` in
+  one result) — verified by hand round trip before any test was written; the fixture's default
+  tool set (`add`, `shout`, `get_env`) stays exact, confirmed by every pre-existing exact-set
+  assertion still passing. Eight new `test_real_stdio_*` tests in `test_mcp_client.py` then prove
+  all three success criteria over a real stdio session rather than the fake transport plans
+  13-02/13-03/13-04 used: a 1s `call_timeout_s` against a 10s sleep raises `MCPTimeout` naming
+  `'slow'` and `call_timeout_s` in under 6s, with the same server answering right after (the
+  cancelled call didn't take the session down); a call issued during a monkeypatched reconnect
+  backoff window raises `MCPServerUnavailable` naming "is reconnecting" in under 1s, never
+  `MCPTimeout`; a configured 100-char cap and the unconfigured 8,000-char default both truncate
+  visibly with the exact dropped-count marker; and real `ImageContent`/`AudioContent`/
+  `EmbeddedResource`/`ResourceLink` blocks render as named markers with no inlined base64 and no
+  Python repr (`ImageContent(`, `AudioContent(`, `EmbeddedResource(`, `data=` all absent from the
+  output). One documented, non-blocking deviation: the plan's own literal `out.count("x") == 100`
+  acceptance text doesn't hold against the real truncation marker (whose own wording,
+  "max_result_chars", contributes extra 'x' characters), corrected to assert the pre-marker line is
+  exactly the 100-char cut — a test-only fix, re-run 3x with no flakes. No production code
+  (`src/agent86/`) touched — `git status --porcelain src/` empty throughout. Full suite green:
+  `pytest -q` 1367 passed (up from 1319), 0 failed; `pytest tests/integration/test_mcp_client.py
+  tests/integration/test_mcp_live.py -q` 29 passed; `ruff check .` and `mypy src/agent86` both
+  clean.
 
 - 2026-09-24 — **Plan 13-04 complete (wire the result cap and non-text content rendering into
   the MCP client, wave 2, MCP-22 and MCP-25 both closed):** `_content_to_text` was rewritten to
@@ -1196,7 +1223,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 13 (Per-server timeouts, the result cap, and non-text content) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 phases 14+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
