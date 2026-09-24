@@ -118,7 +118,10 @@ def test_live_transport_lists_and_calls_tools(live_server, request):
     mgr = _build_ready_manager(cfg)
     try:
         names = {t.name for t in mgr.tools()}
-        assert names == {"mcp__live__add", "mcp__live__shout", "mcp__live__get_env"}
+        assert {"mcp__live__add", "mcp__live__shout", "mcp__live__get_env"} <= names
+        assert {"mcp__live__list_resources", "mcp__live__read_resource"} <= names
+        # resources.subscribe is False on an MCPServer-hosted fixture — the gate must hold.
+        assert "mcp__live__subscribe_resource" not in names
 
         # Real call round trips over the live transport.
         assert mgr.call_tool("live", "add", {"a": 40, "b": 2}).strip() == "42"

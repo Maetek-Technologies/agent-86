@@ -504,9 +504,7 @@ class MCPManager:
 
         async def _call(session: Any) -> tuple[str, dict[str, Any]]:
             result = await session.read_resource(uri)
-            text, meta = _resource_contents_to_text(
-                list(getattr(result, "contents", None) or [])
-            )
+            text, meta = _resource_contents_to_text(list(getattr(result, "contents", None) or []))
             return text, {"uri": uri, **meta}
 
         return self._on_session(server, _call)

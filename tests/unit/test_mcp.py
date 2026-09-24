@@ -623,6 +623,120 @@ def test_close_allows_a_later_restart(monkeypatch):
     manager.close()
 
 
+# --- Plan 11-02: resource capability gating, blob non-inlining, wire fidelity ---------------- #
+
+
+def test_resources_capability_mounts_the_three_read_tools(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("alpha")],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap(subscribe=False)),
+    )
+    manager = MCPManager({})
+    names = [t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))]
+    assert names == [
+        "mcp__srv__alpha",  # the server's own tool comes FIRST (D-04)
+        "mcp__srv__list_resources",
+        "mcp__srv__read_resource",
+        "mcp__srv__list_resource_templates",
+    ]
+    manager.close()
+
+
+def test_absent_resources_capability_mounts_no_synthetic_tools(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("alpha")],
+        capabilities=_FakeCaps(),  # everything None
+    )
+    manager = MCPManager({})
+    names = [t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))]
+    assert names == ["mcp__srv__alpha"]
+    manager.close()
+
+
+def test_resources_capability_subscribe_flag_gates_the_subscribe_tools(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("alpha")],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap(subscribe=True)),
+    )
+    manager = MCPManager({})
+    names = {t.name for t in manager.start_server("srv", MCPServerConfig(command="npx"))}
+    assert {
+        "mcp__srv__list_resources",
+        "mcp__srv__read_resource",
+        "mcp__srv__list_resource_templates",
+        "mcp__srv__subscribe_resource",
+        "mcp__srv__unsubscribe_resource",
+    } <= names
+    manager.close()
+
+
+def test_blob_resource_content_is_never_inlined(monkeypatch):
+    blob = "QUJDREVGR0hJSg=="  # base64; must not appear in what the model sees
+    contents = [
+        _fake_result(uri="res://x/pic.png", mime_type="image/png", blob=blob),
+    ]
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap()),
+        responses={"read_resource": lambda uri, **kw: _fake_result(contents=contents)},
+    )
+    manager = MCPManager({})
+    tools = {t.name: t for t in manager.start_server("srv", MCPServerConfig(command="npx"))}
+    result = tools["mcp__srv__read_resource"].run(
+        ToolCall(id="1", name="mcp__srv__read_resource", arguments={"uri": "res://x/pic.png"}),
+        ctx=None,
+    )
+    manager.close()
+    assert result.ok
+    assert blob not in result.content
+    assert "image/png" in result.content and "not inlined" in result.content
+    assert result.metadata["binary"] == [
+        {"uri": "res://x/pic.png", "mime_type": "image/png", "base64_len": len(blob)}
+    ]
+
+
+def test_read_resource_sends_the_uri_over_the_wire(monkeypatch):
+    calls: list = []
+    contents = [_fake_result(uri="res://x/pic.png", text="hi")]
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap()),
+        responses={"read_resource": lambda uri, **kw: _fake_result(contents=contents)},
+        calls=calls,
+    )
+    manager = MCPManager({})
+    tools = {t.name: t for t in manager.start_server("srv", MCPServerConfig(command="npx"))}
+    tools["mcp__srv__read_resource"].run(
+        ToolCall(id="1", name="mcp__srv__read_resource", arguments={"uri": "res://x/pic.png"}),
+        ctx=None,
+    )
+    manager.close()
+    assert ("read_resource", ("res://x/pic.png",), {}) in calls
+
+
+def test_read_resource_failure_is_a_soft_tool_result(monkeypatch):
+    _install_fake_transport(
+        monkeypatch,
+        [],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap()),
+        responses={"read_resource": RuntimeError("boom")},
+    )
+    manager = MCPManager({})
+    tools = {t.name: t for t in manager.start_server("srv", MCPServerConfig(command="npx"))}
+    result = tools["mcp__srv__read_resource"].run(
+        ToolCall(id="1", name="mcp__srv__read_resource", arguments={"uri": "res://x"}),
+        ctx=None,
+    )
+    manager.close()
+    assert result.ok is False
+    assert "boom" in (result.error or "")
+
+
 def test_real_sdk_tool_object_is_understood():
     """Regression guard: mcp>=2 renamed Tool.inputSchema to input_schema.
 

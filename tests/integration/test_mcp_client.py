@@ -88,7 +88,17 @@ def test_per_server_start_lists_real_tools():
     manager = MCPManager({})
     try:
         tools = manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
-        assert {t._tool for t in tools} == {"add", "shout", "get_env"}
+        remote = {t._tool for t in tools if isinstance(t, MCPTool)}
+        assert remote == {"add", "shout", "get_env"}
+        names = {t.name for t in tools}
+        assert {
+            "mcp__alpha__list_resources",
+            "mcp__alpha__read_resource",
+            "mcp__alpha__list_resource_templates",
+        } <= names
+        # The fixture's MCPServer declares resources.subscribe = False and cannot declare it
+        # True, so the subscribe gate must hold here (plan 11-01, Task 1).
+        assert "mcp__alpha__subscribe_resource" not in names
         assert all(t.name.startswith("mcp__alpha__") for t in tools)
     finally:
         manager.close()
@@ -188,3 +198,26 @@ def test_stdio_server_gets_scrubbed_env(monkeypatch):
     # Positive: the allowlist actually arrived, so the assertion above is not vacuous.
     env = json.loads(raw)
     assert "PATH" in env
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_list_resources_then_read_resource_round_trip():
+    """MCP-14 end to end over real stdio: list, then read, with the text reaching the caller."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
+        listing, _ = manager.list_resources("alpha")
+        assert "res://agent86/greeting.txt" in listing
+        body, meta = manager.read_resource("alpha", "res://agent86/greeting.txt")
+        assert body.strip() == "hello from the agent86 live test server"
+        assert meta["uri"] == "res://agent86/greeting.txt"
+
+        templates, _ = manager.list_resource_templates("alpha")
+        assert "res://agent86/echo/{word}" in templates
+
+        binary, binary_meta = manager.read_resource("alpha", "res://agent86/blob.bin")
+        assert "not inlined" in binary
+        assert "agent86-binary-probe" not in binary
+        assert binary_meta["binary"][0]["base64_len"] > 0
+    finally:
+        manager.close()
