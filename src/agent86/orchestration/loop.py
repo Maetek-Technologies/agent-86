@@ -15,6 +15,7 @@ Every arrow crosses the deterministic harness; the model only ever occupies the 
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -45,7 +46,7 @@ from agent86.orchestration.circuit import CircuitBreaker, CircuitTripped
 from agent86.orchestration.router import ModelRouter
 from agent86.orchestration.state import AgentState, TurnSummary
 from agent86.skills.loader import discover_skills
-from agent86.tools.base import ToolContext
+from agent86.tools.base import Tool, ToolContext
 from agent86.tools.mcp_client import MCPManager, build_mcp
 from agent86.tools.registry import ToolRegistry, default_registry
 from agent86.tools.sandbox.executor import build_executor
@@ -61,6 +62,8 @@ from agent86.types import (
     Usage,
     invalid_arguments_result,
 )
+
+logger = logging.getLogger(__name__)
 
 # Sentinel so an explicitly-passed memory=None means "no memory", not "auto-build".
 _AUTO = object()
@@ -193,6 +196,8 @@ class Harness:
             mcp_tools=mcp_tools,
             enable_delegate=config.agents.enabled,
         )
+        if self.mcp is not None:
+            self._wire_mcp(self.mcp)
         self.executor, self.sandbox_note = build_executor(config)
         self.context = ToolContext(
             workspace=self.policy.workspace,
@@ -316,6 +321,7 @@ class Harness:
         """
         if self.mcp is None:
             self.mcp = MCPManager({})
+            self._wire_mcp(self.mcp)
         return self.mcp
 
     def add_mcp_server(self, name: str, cfg: MCPServerConfig) -> tuple[list[str], list[str]]:
@@ -355,6 +361,30 @@ class Harness:
             self.registry.unregister(tool.name)
         self.mcp.stop_server(name)
         self.mcp.servers.pop(name, None)
+
+    def _wire_mcp(self, manager: MCPManager) -> None:
+        """Keep ``self.registry`` in step with server deaths and reconnects (MCP-26/MCP-23).
+
+        ``add_mcp_server``/``remove_mcp_server`` sync the registry for changes the USER asked for;
+        this covers the ones nobody asked for — a server dying mid-session, and coming back.
+        """
+        manager.on_tools_changed = self._on_mcp_tools_changed
+
+    def _on_mcp_tools_changed(self, server: str, removed: list[Tool], added: list[Tool]) -> None:
+        """Listener for ``MCPManager.on_tools_changed``. Runs on the MCP loop thread.
+
+        Safe there because ToolRegistry is lock-guarded; removal is identity-checked so a tool
+        that won a startup name collision is never taken out; additions use the lenient
+        ``try_register`` (a clash is recorded, not raised). Never raises — an exception here
+        would surface inside the MCP manager's event loop, not to anyone who could act on it.
+        """
+        try:
+            for tool in removed:
+                self.registry.unregister_tool(tool)
+            for tool in added:
+                self.registry.try_register(tool)
+        except Exception:  # noqa: BLE001 - see docstring
+            logger.exception("MCP server %r: syncing the tool registry failed", server)
 
     # ---- sessions ------------------------------------------------------ #
 
