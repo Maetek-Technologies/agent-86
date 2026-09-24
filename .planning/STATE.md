@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T15:32:11.741Z"
+last_updated: "2026-09-24T15:43:08.375Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 3
   completed_phases: 2
   total_plans: 16
-  completed_plans: 11
+  completed_plans: 14
 ---
 
 # Project State
@@ -1075,7 +1075,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 12 (Fix the zombie-tool desync and add reconnect) — EXECUTING
-Plan: 3 of 7
+Plan: 6 of 7
 Status: Ready to execute
 planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
