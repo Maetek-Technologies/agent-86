@@ -168,9 +168,9 @@ flagged in [../docs/BACKLOG.md](../docs/BACKLOG.md) § 999.0 audit head start, c
 **Plans**: 7 plans in 4 waves
 
 Plans:
-- [ ] 12-01-PLAN.md — end-of-stream death detection, both dicts popped, named-server errors,
+- [x] 12-01-PLAN.md — end-of-stream death detection, both dicts popped, named-server errors,
   `on_tools_changed` hook (wave 1, MCP-26)
-- [ ] 12-02-PLAN.md — RLock-guarded ToolRegistry + identity-checked `unregister_tool` (wave 1)
+- [x] 12-02-PLAN.md — RLock-guarded ToolRegistry + identity-checked `unregister_tool` (wave 1)
 - [ ] 12-03-PLAN.md — bounded reconnect with local jittered backoff; stop/close never retried
   (wave 2, MCP-23)
 - [ ] 12-04-PLAN.md — Harness wires `on_tools_changed` into its registry so dead tools leave the
@@ -256,7 +256,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 4/4 plans complete
+**Plans:** 2/7 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
