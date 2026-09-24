@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: verifying
-last_updated: "2026-09-24T17:32:22.502Z"
+status: 8/8 plans have summaries — phase gate green (`pytest -q` 1319 passed, `mypy`/`ruff`
+last_updated: "2026-09-24T17:39:16.215Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 3
@@ -1157,8 +1157,8 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 12 (Fix the zombie-tool desync and add reconnect) — COMPLETE
-Plan: 8 of 8 (12-08, gap closure, complete; 12-07 resumed its own Task 3 human checkpoint after
+Phase: 12
+Plan: Not started
 12-08 closed the gap, approved, and is now complete)
 Status: 8/8 plans have summaries — phase gate green (`pytest -q` 1319 passed, `mypy`/`ruff`
 clean), `12-VALIDATION.md` signed off (`nyquist_compliant: true`), ready for phase verification;
