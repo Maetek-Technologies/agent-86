@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: completed
-last_updated: "2026-09-24T13:41:42.773Z"
-last_activity: 2026-09-24
+status: executing
+last_updated: "2026-09-24T15:24:35.648Z"
+last_activity: 2026-09-24 -- Phase 12 execution started
 progress:
-  total_phases: 2
+  total_phases: 3
   completed_phases: 2
-  total_plans: 9
+  total_plans: 16
   completed_plans: 9
 ---
 
@@ -23,7 +23,7 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 11 — resources-and-prompts-become-first-class
+**Current focus:** Phase 12 — Fix the zombie-tool desync and add reconnect
 close.
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
@@ -1064,6 +1064,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   promoted 2026-09-23 from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown"
   (Proposed Phase 11) once Phase 10's matrix was ruled on. Phases 12+ of that breakdown stay
   unwritten and are promoted one at a time.
+
 - Phase 12 added: Fix the zombie-tool desync and add reconnect — workstream C (MCP-26, MCP-23),
   promoted 2026-09-24 from the same breakdown (Proposed Phase 15, renumbered on promotion).
   Chosen next because it is the only confirmed defect in the breakdown (re-confirmed at
@@ -1073,11 +1074,11 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 12
-Plan: Not started
-Status: Milestone v1.1 at 2/3 phases complete (Phase 10 + Phase 11); Phase 12 added, not yet
+Phase: 12 (Fix the zombie-tool desync and add reconnect) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 12
 planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
-Last activity: 2026-09-24
+Last activity: 2026-09-24 -- Phase 12 execution started
 
 ## Next Step
 
