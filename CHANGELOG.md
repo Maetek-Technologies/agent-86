@@ -8,6 +8,25 @@ All notable changes to agent86 are documented here. The format follows
 
 ### Added
 
+- **Per-server MCP timeouts.** `[mcp.servers.<name>]` now accepts `connect_timeout_s` (default
+  30) and `call_timeout_s` (default 120, also governing resource, prompt and completion calls) —
+  the old hardcoded values, so an existing config behaves identically until it sets one. An
+  overrun fails with an error naming the server and the config key to raise, and the timed-out
+  request is cancelled: a first connect that times out can no longer mount its tools later, and a
+  slow `tools/call` no longer blocks indefinitely. Reconnect attempts (5) and their backoff (0.5s
+  base, doubling, capped at 30s) stay fixed for now — a reconnect attempt itself has no connect
+  deadline yet, a known limit. Closes MCP-21.
+- **MCP results are capped before they reach the prompt.** `max_result_chars` (default 8,000, per
+  [ADR 0004](docs/adr/0004-mcp-result-cap-location.md)) cuts a `tools/call` result, a
+  `resources/read` or a rendered prompt at that length with a visible
+  `…[truncated N chars: result exceeded max_result_chars=... for MCP server '...'; raise
+  max_result_chars under [mcp.servers.<name>] to see more]` marker — never silent, never an
+  error; `structured_content` is still not read. The live pinned-corpus audit
+  ([`13-EVIDENCE.md`](.planning/phases/13-per-server-timeouts-the-result-cap-and-non-text-content/13-EVIDENCE.md))
+  found 6 of 20 real calls exceed the 8,000-char default — `server-filesystem`'s `read_text_file`
+  and `directory_tree`, and `mcp-server-git`'s `git_log`, `git_show` and `git_diff` — and the
+  default ships anyway, because the truncation is visible and per-server overridable.
+  Closes MCP-22.
 - **MCP resources, prompts and argument completion are first-class.** A mounted server's
   `resources/list`, `resources/read`, `resources/templates/list`, `resources/subscribe`,
   `resources/unsubscribe`, `prompts/list`, `prompts/get` and `completion/complete` are now real
@@ -24,8 +43,9 @@ All notable changes to agent86 are documented here. The format follows
   30s) before the manager gives up; a successful reconnect re-lists the server's tools and
   capabilities from a fresh `list_tools()` call and re-mounts them into the registry the model
   is offered, and every attempt — and the eventual reconnect or give-up — is visible in
-  `/tools`'s MCP notes. These limits are fixed for now (per-server configurable retry/backoff is
-  MCP-21); `${VAR}` secrets are resolved once at server start, not re-resolved on each reconnect
+  `/tools`'s MCP notes. These limits are fixed for now (MCP-21 made connect/call timeouts
+  per-server; the reconnect budget itself stays fixed); `${VAR}` secrets are resolved once at
+  server start, not re-resolved on each reconnect
   attempt. A deliberate `stop_server()`/`close()` — even one issued mid-backoff — is never
   mistaken for a drop worth retrying. Closes MCP-23.
 - **MCP disconnect/reconnect notes now appear live, not only at startup.** The TUI transcript
@@ -46,6 +66,19 @@ All notable changes to agent86 are documented here. The format follows
 
 ### Fixed
 
+- **Image, audio and embedded-resource MCP content no longer reaches the model as a Python
+  repr.** `tools/call` results, resource reads and prompt renders used to fall back to
+  `str(chunk)` for any content block without a `.text` attribute, joining the block's raw
+  dataclass repr — including an inlined base64 payload for an image or an audio block — straight
+  into the model-facing prompt. Each block now renders as a named marker instead: an image or
+  audio block as `[image|audio content: mime_type=... base64_len=N — not inlined]` (base64 is
+  never inlined, regardless of size), an embedded text resource inlined under a header naming its
+  URI, an embedded binary resource as the same size marker, a resource link as
+  `[resource link uri=... name=... mime_type=... size=...]`, and any unknown or future block type
+  as a named `[non-text content block: TypeName — not inlined]` marker. Separately: server error
+  results are prefixed `ERROR: ` again — the `mcp` 2.0 SDK renamed `CallToolResult.isError` to
+  `is_error`, which had silently dropped the prefix for every real 2.0 server error.
+  Closes MCP-25.
 - **A dead MCP server no longer leaves zombie tools.** A server that dies mid-session — its
   transport's read stream reaching end-of-stream — is now detected by `_EOFWatchStream`, which
   sits one layer above `ClientSession` so the signal is transport-agnostic (stdio/SSE/streamable

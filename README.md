@@ -347,6 +347,26 @@ capability** when it connected, so `agent86 mcp tools` on a tools-only server lo
 did before. A binary resource is summarised by mime type and size rather than returned as base64,
 and `subscribe_resource`/`unsubscribe_resource` are approval-gated while the reads are not.
 
+**Timeouts and the result cap are per server.** Each `[mcp.servers.<name>]` block accepts three
+more fields:
+
+```toml
+[mcp.servers.files]
+command           = "npx"
+args              = ["-y", "@modelcontextprotocol/server-filesystem", "."]
+connect_timeout_s = 30      # start + initialize + list tools (default 30)
+call_timeout_s    = 120     # each tool / resource / prompt call (default 120)
+max_result_chars  = 32000   # cap on one result's text before it reaches the model (default 8000)
+```
+
+An overrun names the server and the field to raise; an over-cap result truncates with a visible
+`…[truncated N chars ...]` marker rather than failing or being silently dropped. A live
+pinned-corpus audit found real calls like `mcp-server-git`'s `git_show` on a large commit
+routinely exceed the 8,000-char default with no way to narrow the request — raise
+`max_result_chars` for that server rather than lowering your expectations of what it returns.
+`/config mcp` does not have form fields for these three yet, so hand-edit the TOML; the
+connection test inside `/config mcp` keeps its own fixed 30s cap regardless of what you set here.
+
 ## Skills
 
 A skill is a folder with a `SKILL.md` in it: YAML frontmatter the harness reads, and a body of

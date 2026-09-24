@@ -490,7 +490,13 @@ number v0.7 existed to remove.
    reported disconnected. A disconnect/reconnect note reaches the TUI transcript and `--plain`
    live via a push-hook listener — not only at startup — and `/tools` names every non-connected
    server's state; a stdio server's start failure names the real cause plus the child's own
-   captured stderr instead of the SDK's bare "unhandled errors in a TaskGroup".
+   captured stderr instead of the SDK's bare "unhandled errors in a TaskGroup". Each server
+   carries its own `connect_timeout_s`/`call_timeout_s` (defaults 30/120s; reconnect attempts and
+   their backoff stay fixed, and a reconnect attempt itself has no connect deadline yet), and
+   every tool result, resource read and prompt render is capped at the server's
+   `max_result_chars` (default 8,000, ADR 0004 — extended beyond ADR 0004's `_content_to_text`
+   to resource/prompt text by Phase 13) with a visible marker; non-text content blocks render as
+   named markers, never a repr or inlined base64; `structured_content` is still unread.
 3. **Skills** — self-contained folders discovered from skill paths:
 
 ```
@@ -894,6 +900,7 @@ input_per_mtok = 3.0  output_per_mtok = 15.0
 [mcp.servers.example]  command = "npx"  args = ["-y", "some-mcp-server"]   # stdio (local subprocess)
 [mcp.servers.remote]   url = "https://mcp.example.com/mcp"  enabled = true  # streamable HTTP (transport inferred)
 [mcp.servers.remote.headers]  Authorization = "Bearer ${TOKEN}"           # optional auth headers
+[mcp.servers.example]  connect_timeout_s = 30  call_timeout_s = 120  max_result_chars = 8000   # per-server limits (v1.1)
 ```
 
 Fields added in v0.7: `providers.<name>.max_retries` (2), `agents.max_steps` (8),
@@ -903,6 +910,9 @@ read from the parent environment at spawn time, so the "no secrets in config" ru
 and the `config_writer` guard) still holds. `[limits] tool_timeout_s` replaces the old derived
 per-tool timeout (`max_wall_clock_s if under 120 else 60`), which silently shortened every tool
 timeout for anyone who lowered their run budget.
+
+Fields added in v1.1: `mcp.servers.<name>.connect_timeout_s` (30), `call_timeout_s` (120) and
+`max_result_chars` (8000).
 
 Fields added in v0.8: `providers.<name>.max_tokens` (`None`), `providers.<name>.prompt_cache`
 (`true`), `limits.max_output_tokens` (8192), `limits.context_reserve_tokens` (4096),
@@ -1177,6 +1187,10 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 > to the no-op global provider), flight-recorder **redaction**, and flight-recorder **rotation**.
 > Alongside them, and never a row here because it was distribution rather than described design
 > intent, the project is now published to PyPI from a `v*` tag (`docs/RELEASING.md`).
+> One row left this table in v1.1's Phase 13: MCP client non-text content blocks
+> (`CAP-CONTENT-BLOCKS`) — image, audio, embedded-resource and resource-link blocks now render as
+> named markers (`docs/mcp-conformance-matrix.md`). Structured output (`CAP-STRUCTURED-OUTPUT`)
+> did not ship with it and stays below.
 > One row left this table in v0.9: `SKILL.md` `allowed-tools` is now enforced as a gate (§7),
 > alongside the rest of the "coding-agent UX" set, none of which were rows here because they were
 > UI surface rather than described design intent — the Markdown transcript, collapsible tool-call
@@ -1197,7 +1211,6 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 | A read/write split in the sandbox jail, so a skill root granted for reading isn't also writable | §7 tools | BACKLOG § Skills & tools |
 | A `trace show` view of *what* a compaction summarized — the originals are archived, but unreadable from the CLI | §9 observability | BACKLOG § Context & cost |
 | MCP client structured/typed tool output (`CAP-STRUCTURED-OUTPUT`) — `CallToolResult.structured_content` is never read, silently dropped; ADR 0004 leaves this unaddressed pending a future ruling | §7 tools | matrix |
-| MCP client non-text content blocks (`CAP-CONTENT-BLOCKS`) — image/audio/embedded-resource blocks render as a Python repr, not their real payload | §7 tools | matrix; MCP-25 |
 | MCP client sampling (`CAP-SAMPLING`) — opt-in per server, deferred until a realistic corpus server demands it | §7 tools | matrix; MCP-16 |
 | MCP client elicitation (`CAP-ELICITATION`) — opt-in per server, deferred pending four preconditions | §7 tools | matrix; MCP-16 |
 | MCP client roots (`CAP-ROOTS`) — correctly declared absent, and the spec itself deprecates the capability in `2026-07-28` | §7 tools | matrix; MCP-16 |
