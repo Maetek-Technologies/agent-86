@@ -597,6 +597,13 @@ class _DyingTransport:
 
 
 def test_death_eof_clears_sessions_and_tools(monkeypatch):
+    # This test predates reconnect (MCP-23, plan 12-03): its single _Up entry is reused on every
+    # retry (per _DyingTransport's "the last element repeats" contract), which would make the
+    # server reconnect successfully rather than the task ever finishing. Pin no-retry so this
+    # stays a pure SC1 (death is observed, both dicts clear, the task ends) regression guard.
+    import agent86.tools.mcp_client as mcp_client
+
+    monkeypatch.setattr(mcp_client, "_MAX_RECONNECT_ATTEMPTS", 0)
     transport = _DyingTransport([_Up([_fake_tool("a"), _fake_tool("b")])]).install(monkeypatch)
     manager = MCPManager({})
     try:

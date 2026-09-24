@@ -15,6 +15,7 @@ background event loop so the synchronous harness can call MCP tools via
 from __future__ import annotations
 
 import asyncio
+import random
 import re
 import threading
 import warnings
@@ -34,10 +35,26 @@ _NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 #: Reconnect budget after a mid-session drop (MCP-23). Hardcoded on purpose: per-server
 #: timeout/retry config is MCP-21's ruling, not this phase's.
 _MAX_RECONNECT_ATTEMPTS = 5
+_RECONNECT_BASE_DELAY_S = 0.5
+_RECONNECT_MAX_DELAY_S = 30.0
 
 
 def _sanitize(name: str) -> str:
     return _NAME_RE.sub("_", name)[:64]
+
+
+def _reconnect_backoff(
+    attempt: int, *, jitter: Callable[[float, float], float] | None = None
+) -> float:
+    """Exponential backoff with equal jitter: half the window fixed, half random.
+
+    Same shape as ``agent86.cognitive.retry.backoff_delay`` — duplicated rather than imported
+    so the Tools tier takes no dependency on the Cognitive tier. Attempt 1 waits 0.5-1 s; the
+    default budget of 5 attempts waits at most ~31 s in total.
+    """
+    window = min(_RECONNECT_BASE_DELAY_S * (2**attempt), _RECONNECT_MAX_DELAY_S)
+    rand = jitter or random.uniform
+    return window / 2 + rand(0.0, window / 2)
 
 
 class MCPServerUnavailable(RuntimeError):
@@ -582,7 +599,12 @@ class MCPManager:
         return await ready
 
     async def _serve_once(
-        self, name: str, cfg: MCPServerConfig, ready: asyncio.Future, close_event: asyncio.Event
+        self,
+        name: str,
+        cfg: MCPServerConfig,
+        ready: asyncio.Future,
+        close_event: asyncio.Event,
+        reconnecting: bool = False,
     ) -> _SessionEnd:
         """One connection attempt: opens its OWN AsyncExitStack and lets it unwind here.
 
@@ -648,6 +670,13 @@ class MCPManager:
                 connected = True
                 if not ready.done():
                     ready.set_result(tools)
+                if reconnecting and not close_event.is_set():
+                    self._reconnect_attempt.pop(name, None)
+                    self._disconnect_cause.pop(name, None)
+                    self._add_note(
+                        f"MCP server '{name}' reconnected; {len(tools)} tool(s) re-registered."
+                    )
+                    self._emit_tools_changed(name, [], tools)
 
                 stop_wait = asyncio.ensure_future(close_event.wait())
                 died_wait = asyncio.ensure_future(died.wait())
@@ -680,19 +709,63 @@ class MCPManager:
     async def _serve(
         self, name: str, cfg: MCPServerConfig, ready: asyncio.Future, close_event: asyncio.Event
     ) -> None:
-        """The server's owning task for its whole life: one connection, currently no retry.
+        """Own one server for its whole life: connect, park, and on a drop reconnect (MCP-23).
 
-        A bounded, backed-off reconnect loop around ``_serve_once`` is MCP-23 (plan 12-03); this
-        plan (MCP-26) only needs the drop to be observed and both dicts cleared.
+        A first-connect failure is surfaced to start_server() and never retried. A drop after a
+        successful connect is retried up to _MAX_RECONNECT_ATTEMPTS times with backoff; a
+        successful reconnect resets that budget. stop_server()/close() set close_event, which wins
+        over any drop and also cuts a backoff sleep short — a deliberate stop is never retried.
+        Secrets are NOT re-resolved per attempt: cfg was resolved once by start_server(); rotating
+        credentials are workstream B's concern.
         """
-        try:
-            end = await self._serve_once(name, cfg, ready, close_event)
-        except BaseException as exc:  # noqa: BLE001 - surfaced to start_server verbatim
-            if not ready.done():
-                ready.set_exception(exc)
-            return
-        if end.cause is not None:
-            self._on_drop(name, end.cause, end.tools)
+        attempt = 0
+        reconnecting = False
+        while True:
+            try:
+                end = await self._serve_once(
+                    name, cfg, ready, close_event, reconnecting=reconnecting
+                )
+            except BaseException as exc:  # noqa: BLE001
+                if not ready.done():
+                    ready.set_exception(exc)  # first connect: unchanged, no retry
+                    return
+                if not isinstance(exc, Exception) or close_event.is_set():
+                    return  # cancellation / interpreter exit, or a stop that raced the attempt
+                cause = _describe(exc)  # a reconnect attempt failed to connect
+            else:
+                if end.cause is None:  # deliberate stop_server()/close()
+                    if reconnecting:
+                        # These tools reached the registry via on_tools_changed, not via the
+                        # caller that is stopping us — take them back out (identity-checked, so
+                        # harmless if remove_mcp_server already did).
+                        self._emit_tools_changed(name, end.tools, [])
+                    return
+                cause = end.cause
+                attempt = 0  # it was connected: this outage gets a fresh budget
+                self._on_drop(name, cause, end.tools)
+            attempt += 1
+            if attempt > _MAX_RECONNECT_ATTEMPTS:
+                self._server_state[name] = "disconnected"
+                self._disconnect_cause[name] = cause
+                self._reconnect_attempt.pop(name, None)
+                self._add_note(
+                    f"MCP server '{name}' disconnected and did not reconnect after "
+                    f"{_MAX_RECONNECT_ATTEMPTS} attempts: {cause}"
+                )
+                return
+            self._server_state[name] = "reconnecting"
+            self._reconnect_attempt[name] = attempt
+            self._disconnect_cause[name] = cause
+            self._add_note(
+                f"MCP server '{name}' disconnected ({cause}); reconnecting "
+                f"(attempt {attempt} of {_MAX_RECONNECT_ATTEMPTS})."
+            )
+            try:
+                await asyncio.wait_for(close_event.wait(), timeout=_reconnect_backoff(attempt))
+                return  # stop_server() during the backoff
+            except TimeoutError:
+                pass
+            reconnecting = True
 
     def _on_drop(self, name: str, cause: str, tools: list[Tool]) -> None:
         """Record and announce a mid-session drop (not a deliberate stop_server()/close())."""
