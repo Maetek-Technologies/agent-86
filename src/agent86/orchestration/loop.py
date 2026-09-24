@@ -19,7 +19,7 @@ import logging
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from agent86.cognitive.base import ModelProvider
@@ -165,6 +165,10 @@ class Harness:
         memory: MemorySystem | None | object = _AUTO,
     ):
         self.config = config
+        # Set by an interactive surface (the TUI) to receive MCP notes as they happen, on
+        # whichever thread produced them — usually the MCP loop thread. Never set by `run` /
+        # `run --json`, so their output carries no new keys. See `_wire_mcp`/`_forward_mcp_note`.
+        self.on_mcp_note: Callable[[str], None] | None = None
         self.router = ModelRouter(config, forced_provider=provider)
         self.provider = self.router.default_provider()
         self._memory_error: str | None = None
@@ -363,12 +367,33 @@ class Harness:
         self.mcp.servers.pop(name, None)
 
     def _wire_mcp(self, manager: MCPManager) -> None:
-        """Keep ``self.registry`` in step with server deaths and reconnects (MCP-26/MCP-23).
+        """Keep ``self.registry`` in step with server deaths and reconnects (MCP-26/MCP-23), and
+        forward every note the manager records to whatever interactive surface is listening.
 
         ``add_mcp_server``/``remove_mcp_server`` sync the registry for changes the USER asked for;
         this covers the ones nobody asked for — a server dying mid-session, and coming back.
+        Called both at construction (when ``self.mcp`` already exists) and inside ``ensure_mcp``
+        (when a manager is created lazily mid-session), so neither path is missed.
         """
         manager.on_tools_changed = self._on_mcp_tools_changed
+        manager.add_note_listener(self._forward_mcp_note)
+
+    def _forward_mcp_note(self, message: str) -> None:
+        """Relay one MCP note to ``self.on_mcp_note``, if an interactive surface set it.
+
+        Runs on whichever thread ``MCPManager._add_note`` ran on — usually the MCP loop thread —
+        so ``on_mcp_note`` must be thread-safe and non-blocking (the TUI's is: it only posts a
+        Textual message). Never raises. Notes produced by ``build_mcp()``'s own ``start()`` (at
+        construction, before this listener is wired) are not replayed here — they are already
+        covered by ``startup_notes`` at mount.
+        """
+        callback = getattr(self, "on_mcp_note", None)
+        if callback is None:
+            return
+        try:
+            callback(message)
+        except Exception:  # noqa: BLE001 - a broken surface must not wedge the MCP loop
+            logger.debug("MCP note forwarding failed", exc_info=True)
 
     def _on_mcp_tools_changed(self, server: str, removed: list[Tool], added: list[Tool]) -> None:
         """Listener for ``MCPManager.on_tools_changed``. Runs on the MCP loop thread.

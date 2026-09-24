@@ -33,6 +33,7 @@ from agent86.tui.commands import (
 from agent86.tui.messages import (
     ApprovalRequest,
     CatalogReady,
+    McpNote,
     ToolAnnounce,
     ToolOutcome,
     TurnDelta,
@@ -233,6 +234,9 @@ class Agent86App(App):
 
     def on_mount(self) -> None:
         self.query_one("#status", StatusFooter).status = self.repl.status
+        # Set BEFORE the startup-notes loop below: a note racing mount may then show twice
+        # (once from `startup_notes`, once pushed live), but it can never be lost.
+        self.repl.harness.on_mcp_note = self._post_mcp_note
         # The identity panel is entry 0 — a transcript ENTRY (not a bare `log.write()`), so it
         # survives `_rerender()` (a theme change, a tool-block expand/collapse) by construction.
         self._write(banner(self.repl.cfg))
@@ -242,6 +246,29 @@ class Agent86App(App):
             self._write(f"[dim]{escape(note)}[/dim]")
         self.query_one("#palette", OptionList).display = False
         self.query_one("#prompt", PromptInput).focus()
+
+    def _post_mcp_note(self, text: str) -> None:
+        """``Harness.on_mcp_note`` callback: marshal an MCP note onto the UI thread.
+
+        ``App.post_message`` (not ``App.call_from_thread``): Textual's ``post_message`` is
+        thread-safe and non-blocking (``loop.call_soon_threadsafe(...put_nowait)`` off-thread,
+        a direct put on-thread), whereas ``call_from_thread`` blocks the caller until the UI
+        thread runs the callback — and raises if called ON the app thread. That would deadlock
+        against ``stop_server()`` (called on the UI thread, blocking on ``.result()`` for the
+        MCP loop) whenever the loop thread emits a note during that stop.
+        """
+        self.post_message(McpNote(text))
+
+    def on_mcp_note(self, message: McpNote) -> None:
+        """A `disconnect`/`reconnecting`/`reconnected`/`gave up` note — the harness, not the
+        model — surfacing live, even while the app is otherwise idle.
+
+        Mirrors `on_turn_notice`: end any reply in progress so this lands in stream order,
+        markup-escaped (an MCP disconnect cause can quote arbitrary transport error text).
+        """
+        self._finish_reply()
+        self._write(f"[yellow]mcp: {escape(message.text)}[/yellow]")
+        self.query_one("#transcript", RichLog).scroll_end(animate=False)
 
     # ---- transcript writing ------------------------------------------------ #
 
@@ -1184,6 +1211,12 @@ class Agent86App(App):
 
     def on_unmount(self) -> None:
         self._shutdown_workers()
+        # Bound-method equality (not identity — a fresh `self._post_mcp_note` access is a new
+        # object every time): only detach if this app instance is still the one wired in, so a
+        # `Harness` handed to a second `Agent86App` (e.g. a test rebuilding the app around the
+        # same repl) is never accidentally un-wired by the first app's teardown.
+        if getattr(self.repl.harness, "on_mcp_note", None) == self._post_mcp_note:
+            self.repl.harness.on_mcp_note = None
 
     # ---- model catalog (session cache) -------------------------------------- #
 

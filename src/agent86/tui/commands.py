@@ -264,7 +264,15 @@ def _tools_render(repl) -> str:
     from rich.markup import escape
 
     # Tool names include MCP tools, named by the server rather than by us.
-    return "tools: " + ", ".join(escape(n) for n in repl.harness.registry.names())
+    lines = ["tools: " + ", ".join(escape(n) for n in repl.harness.registry.names())]
+    # Every MCP server that is NOT currently connected, with its state — through the public
+    # `server_statuses()` accessor only; never the manager's private state dicts.
+    mcp = getattr(repl.harness, "mcp", None)
+    statuses = getattr(mcp, "server_statuses", None)
+    if callable(statuses):
+        for name, status in statuses().items():
+            lines.append(f"mcp {escape(name)}: {escape(status)}")
+    return "\n".join(lines)
 
 
 def _config_render(repl) -> str:

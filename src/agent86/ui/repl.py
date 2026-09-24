@@ -231,6 +231,10 @@ class _Repl:
 
         from agent86.tui.commands import startup_notes  # textual-free; see module docstring
 
+        # Marked BEFORE startup_notes below, so a note racing startup can duplicate (shown once
+        # by startup_notes, once by pending_mcp_notes) but never vanish.
+        self._mcp_note_cursor = self._mcp_note_mark()
+
         #: Launch notes — resume, memory/mcp/sandbox/skills, session id — already
         #: markup-escaped. The plain path prints these (``print_notes``); the TUI renders
         #: them into its transcript on mount.
@@ -310,6 +314,32 @@ class _Repl:
             style = "yellow" if note.startswith("sandbox:") else "dim"
             console.print(f"[{style}]{note}[/{style}]")
 
+    # ---- MCP notes (post-startup, both surfaces) ----------------------- #
+
+    def _mcp_note_mark(self) -> tuple[int, int]:
+        """``(id(mcp), note_seq)`` right now — the cursor `pending_mcp_notes` polls forward from."""
+        mcp = getattr(self.harness, "mcp", None)
+        seq = getattr(mcp, "note_seq", 0) if mcp is not None else 0
+        return id(mcp), seq if isinstance(seq, int) else 0
+
+    def pending_mcp_notes(self) -> list[str]:
+        """MCP notes recorded since the last call, each already markup-escaped and `mcp: `-
+        prefixed. A repeat outage is returned again, never deduped (``notes_since`` isn't
+        deduped either) — a second identical drop is real news, not noise.
+
+        The plain loop's equivalent of the TUI's push hook: there is no event loop to push
+        into, so this drains a sequenced log instead, called right before each prompt.
+        """
+        mcp = getattr(self.harness, "mcp", None)
+        start = self._mcp_note_cursor[1] if id(mcp) == self._mcp_note_cursor[0] else 0
+        notes_since = getattr(mcp, "notes_since", None)
+        if not callable(notes_since):
+            self._mcp_note_cursor = (id(mcp), 0)
+            return []
+        seq, fresh = notes_since(start)
+        self._mcp_note_cursor = (id(mcp), seq)
+        return [f"mcp: {escape(n)}" for n in fresh]
+
     # ---- @file mentions ----------------------------------------------- #
 
     def expand_mentions(self, line: str):  # noqa: ANN201 - MentionResult, imported lazily
@@ -361,6 +391,8 @@ class _Repl:
         install_approval_prompt(self.harness)
 
         while True:
+            for note in self.pending_mcp_notes():
+                console.print(f"[yellow]{note}[/yellow]")
             try:
                 raw = input("agent86> ")
             except EOFError:

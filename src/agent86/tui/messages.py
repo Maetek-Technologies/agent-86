@@ -101,6 +101,21 @@ class TurnError(Message):
         super().__init__()
 
 
+class McpNote(Message):
+    """An MCP manager note (drop, reconnect, gave up) posted from any thread.
+
+    Textual routes this to ``on_mcp_note`` (``textual.case.camel_to_snake("McpNote") ==
+    "mcp_note"``) — posted via ``App.post_message``, not ``App.call_from_thread``: the latter
+    blocks the poster until the UI thread runs the callback and raises if called on the app
+    thread itself, which would deadlock against ``stop_server()`` (called on the UI thread,
+    blocking on the MCP loop) whenever the loop thread emits a note during that stop.
+    """
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        super().__init__()
+
+
 class CatalogReady(Message):
     """A provider's live model catalog finished loading (or failed).
 
@@ -132,5 +147,6 @@ __all__ = [
     "ApprovalRequest",
     "TurnDone",
     "TurnError",
+    "McpNote",
     "CatalogReady",
 ]
