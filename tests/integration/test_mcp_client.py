@@ -350,3 +350,64 @@ def test_mid_session_kill_unregisters_tools_and_names_server(tmp_path, monkeypat
         assert any("MCP server 'alpha' disconnected" in note for note in manager.notes)
     finally:
         manager.close()
+
+
+# --- Plan 12-06: real-stdio reconnect after a kill (SC3 end-to-end, MCP-23) --------------- #
+
+
+def _pid_changed(path: Path, old: int) -> bool:
+    """Tolerant check: a new pid has been written to `path`, distinct from `old`.
+
+    Returns False (never raises) on a missing file, an empty/partial write mid-flush, or any
+    value that doesn't parse as an int — the writer (`live_mcp_server.py`) truncates then writes,
+    so a reader can observe a transient empty/partial file while the new process is starting.
+    """
+    if not path.exists():
+        return False
+    text = path.read_text(encoding="utf-8").strip()
+    if not text:
+        return False
+    try:
+        new = int(text)
+    except ValueError:
+        return False
+    return new != old
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_mid_session_kill_reconnects_with_fresh_tools(tmp_path):
+    """A real killed stdio server comes back on its own (MCP-23, SC3), not just `stop_server`.
+
+    Does NOT monkeypatch the reconnect constants — this exercises the shipped defaults
+    (`_MAX_RECONNECT_ATTEMPTS = 5`), unlike plan 12-05's sibling test which pins 0 to stay a pure
+    no-retry SC1 regression guard.
+    """
+    manager = MCPManager({})
+    try:
+        pid_file = tmp_path / "alpha.pid"
+        manager.start_server("alpha", _pid_cfg(pid_file), timeout=30.0)
+        first = _read_pid(pid_file)
+
+        _kill(first)
+
+        assert _wait_until(
+            lambda: (
+                _pid_changed(pid_file, first)
+                and "alpha" in manager._sessions
+                and manager.tools_for("alpha")
+            ),
+            30.0,
+        )
+
+        assert "2" in manager.call_tool("alpha", "add", {"a": 1, "b": 1})
+
+        assert {t._tool for t in manager.tools_for("alpha") if isinstance(t, MCPTool)} == {
+            "add",
+            "shout",
+            "get_env",
+        }
+
+        assert any("MCP server 'alpha' reconnected" in n for n in manager.notes)
+        assert not manager._tasks["alpha"].done()
+    finally:
+        manager.close()
