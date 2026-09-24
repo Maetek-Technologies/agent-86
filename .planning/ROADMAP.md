@@ -55,7 +55,7 @@ implementation phases are now written from its recommended breakdown
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
   — **4 plans**, 4 waves
-- [ ] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies
+- [x] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies (completed 2026-09-24)
   mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
   closing MCP-26 and MCP-23
 
@@ -178,7 +178,7 @@ Plans:
 - [x] 12-05-PLAN.md — real-stdio kill-mid-session integration test via a fixture pid file (wave 2)
 - [x] 12-06-PLAN.md — real-stdio reconnect test + SSE/streamable-HTTP kill tests or recorded
   accepted risk (wave 3)
-- [ ] 12-07-PLAN.md — docs, VALIDATION sign-off, phase gate, TUI human-verify (wave 4)
+- [x] 12-07-PLAN.md — docs, VALIDATION sign-off, phase gate, TUI human-verify (wave 4)
 - [x] 12-08-PLAN.md — gap closure: MCP drop/reconnect notes pushed live to the TUI, `/tools`
   server state, plain-loop drain; start-failure note unwraps ExceptionGroups and quotes the stdio
   child's stderr tail (wave 4, MCP-26, MCP-23)
@@ -259,7 +259,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 7/8 plans executed
+**Plans:** 8/8 plans complete
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 

@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: verifying
-last_updated: "2026-09-24T17:11:41.272Z"
+last_updated: "2026-09-24T17:32:22.502Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 17
-  completed_plans: 16
+  completed_plans: 17
 ---
 
 # Project State
@@ -67,7 +67,8 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
-| 11 — Resources and Prompts First-Class | ◐ | 3/4 | 75% |
+| 11 — Resources and Prompts First-Class | ● | 4/4 | 100% |
+| 12 — Fix the Zombie-Tool Desync and Add Reconnect | ● | 8/8 | 100% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -77,6 +78,36 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 12-07 complete (phase signoff — docs, validation sign-off, and
+  human-verified reconnect, wave 4 — final plan, Phase 12 now 8/8 complete, MCP-26 and MCP-23
+  both closed):** Task 1 documented what Phase 12 shipped: CHANGELOG `Fixed`/`Added` entries for
+  MCP-26 (end-of-stream death detection, tools unregistered from `MCPManager` and
+  `Harness.registry`, named-server errors) and MCP-23 (bounded reconnect, up to 5 attempts with
+  exponential backoff and jitter, fresh tool re-listing, `/tools` MCP notes); a new "MCP servers
+  recover too" README paragraph; two sentences in `docs/ARCHITECTURE.md` §7 item 2; both
+  `docs/mcp-conformance-matrix.md` "Not rated here" bullets marked closed by Phase 12. Task 2
+  signed off `12-VALIDATION.md` against real results — every `12-xx`/`TBD` placeholder replaced
+  with a real task ID and passing command, all Wave 0 and Sign-Off checkboxes ticked,
+  `nyquist_compliant: true`. **Task 3 (the human checkpoint) took three passes to close.** First
+  attempt: the user's config used `command = "python"`, which outside the venv resolved to a
+  system Python without `mcp`, so the server died on import and agent86 showed an opaque
+  `unhandled errors in a TaskGroup` — fixed by pointing `command` at the venv interpreter. Second
+  attempt: reconnect actually worked (orchestrator-confirmed: PID 39700 killed, PID 28380
+  respawned within 1.75s) but the user saw no message, because the TUI only ever rendered MCP
+  notes once, at mount — a real gap in this plan's own checkpoint steps, not a defect in the
+  reconnect logic. That gap was closed by a new plan, **12-08** (live push-hook MCP notes, `/tools`
+  per-server state, readable start failures — see its own entry above), after which the third
+  attempt was **approved**: a live disconnect → reconnecting → reconnected sequence appeared in
+  the TUI transcript unprompted, and a tool call worked again after reconnect. This plan then
+  folded 12-08's shipped behaviour into its own docs (CHANGELOG, README, `ARCHITECTURE.md` §7, and
+  five new `12-VALIDATION.md` Per-Task Verification Map rows for 12-08 with real re-run `pytest -k`
+  commands and counts), since 12-07 owns the phase's docs and the phase gate should describe Phase
+  12 as it actually behaves today. Full suite green: `pytest -q` (isolated HOME/USERPROFILE) 1319
+  passed, 0 failed; `mypy src/agent86` and `ruff check .` both clean;
+  `pytest tests/unit/test_docs_consistency.py -q` 7 passed. No production code changed by this
+  plan — every fix belongs to plan 12-08. **Phase 12 is now complete: 8/8 plans, MCP-26 and MCP-23
+  both closed, human-verified live in the TUI.**
 
 - 2026-09-24 — **Plan 12-08 complete (gap closure — live MCP notes and readable start failures,
   wave 4, MCP-26 and MCP-23 re-confirmed closed):** Gap closure from 12-07 Task 3's human
@@ -1126,11 +1157,12 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 12 (Fix the zombie-tool desync and add reconnect) — EXECUTING
-Plan: 8 of 8 (12-08, gap closure, complete; 12-07 still paused at its own Task 3 human
-checkpoint, now unblocked to resume)
-Status: 7/8 plans have summaries — awaiting 12-07's manual TUI re-check before phase verification
-planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
+Phase: 12 (Fix the zombie-tool desync and add reconnect) — COMPLETE
+Plan: 8 of 8 (12-08, gap closure, complete; 12-07 resumed its own Task 3 human checkpoint after
+12-08 closed the gap, approved, and is now complete)
+Status: 8/8 plans have summaries — phase gate green (`pytest -q` 1319 passed, `mypy`/`ruff`
+clean), `12-VALIDATION.md` signed off (`nyquist_compliant: true`), ready for phase verification;
+phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
 ## Next Step
