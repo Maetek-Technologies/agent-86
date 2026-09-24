@@ -17,9 +17,13 @@ from __future__ import annotations
 import asyncio
 import re
 import threading
+import warnings
+from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Generic, TypeVar
+
+from pydantic import BaseModel, Field
 
 from agent86.config import Config, MCPServerConfig
 from agent86.tools.base import EmptyArgs, Tool, ToolContext
@@ -69,6 +73,133 @@ class MCPTool(Tool[EmptyArgs]):
         return ToolResult(call_id=call.id, name=self.name, content=text)
 
 
+_TArgs = TypeVar("_TArgs", bound=BaseModel)
+
+
+class _MCPCapabilityTool(Tool[_TArgs], Generic[_TArgs]):
+    """Base for the synthetic per-server tools wrapping a non-``tools/*`` MCP capability.
+
+    Where :class:`MCPTool` takes its name, description and JSON Schema from the remote server,
+    these are agent86's own: a fixed verb, a local Pydantic ``Args`` model, and construction
+    only for a server whose advertised ``ServerCapabilities`` declares the feature
+    (``_capability_tools``). They implement ``execute`` rather than overriding ``run``, so they
+    inherit argument validation and the never-raise backstop from :class:`Tool`.
+    """
+
+    #: Appended to ``mcp__{server}__`` to form the tool name.
+    verb: str = ""
+    #: The description's first sentence; the server name is appended automatically.
+    summary: str = ""
+
+    def __init__(self, manager: MCPManager, server: str) -> None:
+        self._manager = manager
+        self._server = server
+        self.name = _sanitize(f"mcp__{server}__{self.verb}")
+        self.description = f"{self.summary} (MCP: {server})"
+
+    def _ok(self, payload: tuple[str, dict[str, Any]]) -> ToolResult:
+        text, metadata = payload
+        return ToolResult(call_id="", name=self.name, content=text, metadata=metadata)
+
+    def _failed(self, exc: Exception) -> ToolResult:
+        # Same wording as MCPTool.run, so the model sees one MCP failure shape, not two.
+        return ToolResult(call_id="", name=self.name, ok=False, error=f"MCP call failed: {exc}")
+
+
+class _ResourceUriArgs(BaseModel):
+    uri: str = Field(
+        description="The resource URI, exactly as returned by the list_resources tool."
+    )
+
+
+class MCPListResourcesTool(_MCPCapabilityTool[EmptyArgs]):
+    """resources/list."""
+
+    verb = "list_resources"
+    summary = (
+        "List the resources this MCP server exposes, as "
+        "'uri | name | mime_type | description' rows. Read one with read_resource."
+    )
+    Args = EmptyArgs
+
+    def execute(self, args: EmptyArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(self._manager.list_resources(self._server))
+        except Exception as exc:  # noqa: BLE001 - a tool never raises into the loop
+            return self._failed(exc)
+
+
+class MCPListResourceTemplatesTool(_MCPCapabilityTool[EmptyArgs]):
+    """resources/templates/list."""
+
+    verb = "list_resource_templates"
+    summary = (
+        "List this MCP server's resource TEMPLATES — parameterised URIs like "
+        "'res://x/{id}' that read_resource can be called with once the parameters are filled in."
+    )
+    Args = EmptyArgs
+
+    def execute(self, args: EmptyArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(self._manager.list_resource_templates(self._server))
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
+class MCPReadResourceTool(_MCPCapabilityTool[_ResourceUriArgs]):
+    """resources/read."""
+
+    verb = "read_resource"
+    summary = (
+        "Read one resource from this MCP server by URI. Text content is returned inline; "
+        "binary content is summarised by mime type and size and is NOT returned as base64."
+    )
+    Args = _ResourceUriArgs
+
+    def execute(self, args: _ResourceUriArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(self._manager.read_resource(self._server, args.uri))
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
+class MCPSubscribeResourceTool(_MCPCapabilityTool[_ResourceUriArgs]):
+    """resources/subscribe. Approval-gated (D-03)."""
+
+    verb = "subscribe_resource"
+    summary = (
+        "Ask this MCP server to track changes to one resource URI. Note: update "
+        "notifications are not delivered to the model yet, so this records intent only."
+    )
+    Args = _ResourceUriArgs
+    # Creates server-side state, and — until MCP-24 delivers the notification — an unapproved
+    # background subscription would be invisible to the user. Approval-gated on purpose (D-03).
+    side_effecting = True
+
+    def execute(self, args: _ResourceUriArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(self._manager.subscribe_resource(self._server, args.uri))
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
+class MCPUnsubscribeResourceTool(_MCPCapabilityTool[_ResourceUriArgs]):
+    """resources/unsubscribe. The release half of subscribe_resource (D-01)."""
+
+    verb = "unsubscribe_resource"
+    summary = "Stop tracking changes to one resource URI on this MCP server."
+    Args = _ResourceUriArgs
+    side_effecting = True
+
+    def execute(self, args: _ResourceUriArgs, ctx: ToolContext) -> ToolResult:
+        try:
+            return self._ok(
+                self._manager.subscribe_resource(self._server, args.uri, subscribe=False)
+            )
+        except Exception as exc:  # noqa: BLE001
+            return self._failed(exc)
+
+
 def _get_client_session() -> Any:
     """Return ``mcp.ClientSession``, looked up through this module's own globals first.
 
@@ -111,6 +242,29 @@ def _is_read_only(tool: Any) -> bool:
     return value is True
 
 
+def _capability_tools(manager: MCPManager, server: str, caps: Any) -> list[Tool]:
+    """The synthetic tools a server's advertised ``ServerCapabilities`` entitle it to.
+
+    Gating registration (rather than gating the call) is the point: a server that never declared
+    ``resources`` answers ``resources/list`` with a JSON-RPC "method not found", and advertising
+    a tool that can only ever fail trains the model to distrust its tool list. Mirrors
+    ``_is_read_only``'s philosophy — a server-declared signal only ever changes what agent86
+    *offers* for a server the user already chose to mount.
+    """
+    extra: list[Tool] = []
+    if caps is None:
+        return extra
+    resources = getattr(caps, "resources", None)
+    if resources is not None:
+        extra.append(MCPListResourcesTool(manager, server))
+        extra.append(MCPReadResourceTool(manager, server))
+        extra.append(MCPListResourceTemplatesTool(manager, server))
+        if getattr(resources, "subscribe", False):
+            extra.append(MCPSubscribeResourceTool(manager, server))
+            extra.append(MCPUnsubscribeResourceTool(manager, server))
+    return extra
+
+
 class MCPManager:
     def __init__(
         self,
@@ -128,7 +282,7 @@ class MCPManager:
         self._sessions: dict[str, Any] = {}
         self._tasks: dict[str, Any] = {}  # name -> asyncio.Task (owns its own stack)
         self._close_events: dict[str, Any] = {}  # name -> asyncio.Event
-        self._server_tools: dict[str, list[MCPTool]] = {}
+        self._server_tools: dict[str, list[Tool]] = {}
         self._started = False
 
     def _add_note(self, message: str) -> None:
@@ -166,7 +320,7 @@ class MCPManager:
         cfg: MCPServerConfig,
         timeout: float = 30.0,
         overrides: dict[str, str] | None = None,
-    ) -> list[MCPTool]:
+    ) -> list[Tool]:
         """Open one server's transport and return its tools. Blocks the caller until ready.
 
         Raises on connection failure or timeout — the connection-test modal surfaces it verbatim
@@ -187,7 +341,7 @@ class MCPManager:
             raise
         return tools
 
-    async def _launch(self, name: str, cfg: MCPServerConfig) -> list[MCPTool]:
+    async def _launch(self, name: str, cfg: MCPServerConfig) -> list[Tool]:
         close_event = asyncio.Event()
         ready: asyncio.Future = asyncio.get_running_loop().create_future()
         task = asyncio.create_task(self._serve(name, cfg, ready, close_event))
@@ -219,7 +373,7 @@ class MCPManager:
                 session = await stack.enter_async_context(ClientSession(read, write))
                 await session.initialize()
                 listed = await session.list_tools()
-                tools = [
+                tools: list[Tool] = [
                     MCPTool(
                         self,
                         name,
@@ -230,6 +384,14 @@ class MCPManager:
                     )
                     for t in listed.tools
                 ]
+                # Capability-gated synthetic tools, appended AFTER the server's own (D-04): a
+                # server exposing a real tool called e.g. "read_resource" keeps the name, and
+                # agent86's synthetic one is reported as a collision by ToolRegistry rather
+                # than shadowing it. Read through getattr so a session object without the
+                # property (an older SDK, or a test fake) degrades to "no synthetic tools".
+                tools.extend(
+                    _capability_tools(self, name, getattr(session, "server_capabilities", None))
+                )
                 self._sessions[name] = session
                 self._server_tools[name] = tools
                 if not ready.done():
@@ -259,10 +421,10 @@ class MCPManager:
             self._add_note(f"MCP server '{name}' did not shut down cleanly: {exc}")
         self._sessions.pop(name, None)
 
-    def tools_for(self, name: str) -> list[MCPTool]:
+    def tools_for(self, name: str) -> list[Tool]:
         return list(self._server_tools.get(name, []))
 
-    def tools(self) -> list[MCPTool]:
+    def tools(self) -> list[Tool]:
         return [tool for tools in self._server_tools.values() for tool in tools]
 
     def start(self) -> None:
@@ -293,6 +455,92 @@ class MCPManager:
             return _content_to_text(result)
 
         return asyncio.run_coroutine_threadsafe(_call(), self._loop).result(timeout=120)
+
+    def _on_session(
+        self,
+        server: str,
+        call: Callable[[Any], Coroutine[Any, Any, Any]],
+        timeout: float = 120,
+    ) -> Any:
+        """Run ``call(session)`` on the MCP event loop and return its result.
+
+        The synchronous entry point every capability call site shares — same guard, same
+        ``run_coroutine_threadsafe(...).result(timeout=...)`` shape ``call_tool`` already uses.
+        The 120-second default is deliberately the same hardcoded number: per-server
+        configurable timeouts are MCP-21 (workstream C), and a second timeout knob here would
+        pre-empt that ruling.
+        """
+        if self._loop is None or server not in self._sessions:
+            raise RuntimeError("MCP session not available")
+        session = self._sessions[server]
+        return asyncio.run_coroutine_threadsafe(call(session), self._loop).result(timeout=timeout)
+
+    def list_resources(self, server: str) -> tuple[str, dict[str, Any]]:
+        """``resources/list`` — a single page, matching ``list_tools()``'s existing behaviour.
+
+        ``next_cursor`` is deliberately ignored: CAP-PAGINATION is workstream C, and building a
+        cursor loop here would be the only paginated call in the client.
+        """
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            result = await session.list_resources()
+            resources = list(getattr(result, "resources", None) or [])
+            return _resources_to_text(resources), {"count": len(resources)}
+
+        return self._on_session(server, _call)
+
+    def list_resource_templates(self, server: str) -> tuple[str, dict[str, Any]]:
+        """``resources/templates/list`` — single page, same reasoning as list_resources."""
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            result = await session.list_resource_templates()
+            templates = list(getattr(result, "resource_templates", None) or [])
+            return _resource_templates_to_text(templates), {"count": len(templates)}
+
+        return self._on_session(server, _call)
+
+    def read_resource(self, server: str, uri: str) -> tuple[str, dict[str, Any]]:
+        """``resources/read``. Binary contents are marked, never inlined (D-02)."""
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            result = await session.read_resource(uri)
+            text, meta = _resource_contents_to_text(
+                list(getattr(result, "contents", None) or [])
+            )
+            return text, {"uri": uri, **meta}
+
+        return self._on_session(server, _call)
+
+    def subscribe_resource(
+        self, server: str, uri: str, *, subscribe: bool = True
+    ) -> tuple[str, dict[str, Any]]:
+        """``resources/subscribe`` / ``resources/unsubscribe``.
+
+        Both SDK methods are ``@deprecated`` relative to protocol revision ``2026-07-28``, which
+        replaces them with ``Client.listen()``. agent86's client negotiates ``2025-11-25``
+        (Phase 10, D-01), for which these ARE the correct calls — the deprecation is a forward
+        notice about a revision this client cannot speak, not a defect. Do not delete these call
+        sites; that would silently drop CAP-RESOURCE-SUBSCRIBE. The warning (a ``UserWarning``
+        subclass, shown by default) is silenced for exactly this call and nowhere else.
+        """
+
+        async def _call(session: Any) -> tuple[str, dict[str, Any]]:
+            from mcp.shared.exceptions import MCPDeprecationWarning
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", MCPDeprecationWarning)
+                if subscribe:
+                    await session.subscribe_resource(uri)
+                else:
+                    await session.unsubscribe_resource(uri)
+            verb = "Subscribed to" if subscribe else "Unsubscribed from"
+            return (
+                f"{verb} {uri}. Note: resource update notifications are not delivered to the "
+                f"model yet (tracked as MCP-24), so this records intent on the server only.",
+                {"uri": uri, "subscribed": subscribe},
+            )
+
+        return self._on_session(server, _call)
 
     def close(self) -> None:
         """Shut every server down and return the manager to a restartable state.
@@ -434,6 +682,79 @@ def _content_to_text(result: Any) -> str:
     return body
 
 
+def _row(*cells: object) -> str:
+    """One pipe-delimited table row with whitespace-collapsed cells."""
+    return " | ".join(" ".join(str(c if c is not None else "").split()) for c in cells)
+
+
+def _resources_to_text(resources: list[Any]) -> str:
+    """``uri | name | mime_type | description``, one line per resource."""
+    if not resources:
+        return "(no resources)"
+    lines = ["uri | name | mime_type | description"]
+    for r in resources:
+        lines.append(
+            _row(
+                getattr(r, "uri", ""),
+                getattr(r, "name", ""),
+                getattr(r, "mime_type", None) or "unknown",
+                getattr(r, "description", None) or "",
+            )
+        )
+    return "\n".join(lines)
+
+
+def _resource_templates_to_text(templates: list[Any]) -> str:
+    """``uri_template | name | mime_type | description``, one line per template."""
+    if not templates:
+        return "(no resource templates)"
+    lines = ["uri_template | name | mime_type | description"]
+    for t in templates:
+        lines.append(
+            _row(
+                getattr(t, "uri_template", "") or getattr(t, "uriTemplate", ""),
+                getattr(t, "name", ""),
+                getattr(t, "mime_type", None) or "unknown",
+                getattr(t, "description", None) or "",
+            )
+        )
+    return "\n".join(lines)
+
+
+def _resource_contents_to_text(contents: list[Any]) -> tuple[str, dict[str, Any]]:
+    """Flatten ``ReadResourceResult.contents``, NEVER inlining a base64 blob.
+
+    Returns ``(content_text, metadata)``. A text part is rendered verbatim; a binary part
+    becomes a one-line marker naming its mime type and base64 length, with the same facts
+    recorded under ``metadata["binary"]``. The base64 itself is carried nowhere (D-02): it is
+    unusable to the model as text, unbounded in size, and bounding an MCP result is ADR 0004 /
+    MCP-22's question, not this one's. Representing non-text content properly is
+    CAP-CONTENT-BLOCKS / MCP-25.
+    """
+    if not contents:
+        return "(no content)", {}
+    parts: list[str] = []
+    binary: list[dict[str, Any]] = []
+    for item in contents:
+        text = getattr(item, "text", None)
+        if text is not None:
+            parts.append(text)
+            continue
+        descriptor: dict[str, Any] = {
+            "uri": str(getattr(item, "uri", "") or ""),
+            "mime_type": str(getattr(item, "mime_type", None) or "unknown"),
+            "base64_len": len(getattr(item, "blob", None) or ""),
+        }
+        binary.append(descriptor)
+        parts.append(
+            f"[binary resource uri={descriptor['uri']} "
+            f"mime_type={descriptor['mime_type']} "
+            f"base64_len={descriptor['base64_len']} — not inlined]"
+        )
+    metadata: dict[str, Any] = {"binary": binary} if binary else {}
+    return "\n".join(parts), metadata
+
+
 def build_mcp(config: Config) -> MCPManager | None:
     """Start MCP servers from config, or return None if disabled / none configured.
 
@@ -454,8 +775,13 @@ def build_mcp(config: Config) -> MCPManager | None:
 
 
 __all__ = [
+    "MCPListResourceTemplatesTool",
+    "MCPListResourcesTool",
     "MCPManager",
+    "MCPReadResourceTool",
+    "MCPSubscribeResourceTool",
     "MCPTool",
+    "MCPUnsubscribeResourceTool",
     "build_mcp",
     "stdio_env",
     "_resolve_server_secrets",
