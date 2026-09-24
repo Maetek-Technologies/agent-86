@@ -3,7 +3,7 @@ phase: 11
 slug: resources-and-prompts-become-first-class
 status: planned
 nyquist_compliant: false
-wave_0_complete: false
+wave_0_complete: true
 created: 2026-09-23
 planned: 2026-09-23
 ---
@@ -50,8 +50,8 @@ Wave 0 work at `wave: 1`.
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 11-01 T1 | 11-01 | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ❌ W0 — extend `live_mcp_server.py` with `.resource()` / `.prompt()` / `.completion()` | ⬜ pending |
-| 11-01 T2 | 11-01 | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ❌ W0 — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ⬜ pending |
+| 11-01 T1 | 11-01 | 0 | MCP-14/15 | fixture | `pytest tests/integration/test_mcp_client.py -q` | ✅ landed — `live_mcp_server.py` extended with `.resource()` / `.prompt()` / `.completion()` | ✅ green |
+| 11-01 T2 | 11-01 | 0 | MCP-14 | fixture | `pytest tests/unit/test_mcp.py -q` | ✅ landed — fake `ServerCapabilities` session fixture extending `_install_fake_transport` (`tests/unit/test_mcp.py:328-364`) | ✅ green |
 | 11-02 T3 | 11-02 | 1 | MCP-14 | integration | `pytest tests/integration/test_mcp_client.py -k resource -q` | ❌ W0 dep (11-01 T1) | ⬜ pending |
 | 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k resources_capability -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
 | 11-02 T3 | 11-02 | 1 | MCP-14 | unit | `pytest tests/unit/test_mcp.py -k blob_resource -q` | ❌ W0 dep (11-01 T2) | ⬜ pending |
@@ -71,13 +71,22 @@ continuity holds: no three consecutive tasks run without an automated verify.
 
 ## Wave 0 Requirements
 
-- [ ] `tests/integration/live_mcp_server.py` — add a `.resource()`-decorated resource, a
+- [x] `tests/integration/live_mcp_server.py` — add a `.resource()`-decorated resource, a
       `.prompt()`-decorated prompt (with at least one completable-style argument), and a
       `.completion()` handler, so CI exercises resources/prompts/completion without network or
       `npx` (mirrors the `add`/`shout`/`get_env` tools added for SEC-04 in plan 10-01)
-- [ ] `tests/unit/test_mcp.py` — a fake `ServerCapabilities`-bearing session fixture (extending
+      Landed by plan 11-01 Task 1: three resources (`res://agent86/greeting.txt` text,
+      `res://agent86/blob.bin` binary, `res://agent86/echo/{word}` template), the `review_code`
+      prompt with `path`/`style` arguments, and a `complete_argument` handler offering
+      `STYLE_COMPLETIONS` for `style`. `resources.subscribe` is `False` and cannot be raised
+      through `MCPServer` — the subscribe/unsubscribe call sites are covered by the fake session
+      instead.
+- [x] `tests/unit/test_mcp.py` — a fake `ServerCapabilities`-bearing session fixture (extending
       `_install_fake_transport`) so capability-gated registration is unit-testable without a real
       server
+      Landed by plan 11-01 Task 2: `_FakeCaps` / `_FakeResourcesCap` / `_FakePromptsCap` /
+      `_FakeCompletionsCap`, `_fake_result`, and `_install_fake_transport(..., capabilities=,
+      responses=, calls=)`.
 - [ ] Framework install: **none** — the `mcp` extra is already a dev/test dependency
       (`pyproject.toml:59,62`)
 
