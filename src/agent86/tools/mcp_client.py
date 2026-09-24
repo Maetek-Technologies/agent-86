@@ -21,7 +21,7 @@ import warnings
 from collections.abc import Callable, Coroutine
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Generic, Literal, TypeVar
+from typing import Any, Generic, Literal, NamedTuple, TypeVar
 
 from pydantic import BaseModel, Field
 
@@ -31,9 +31,24 @@ from agent86.types import ToolCall, ToolResult, ToolSpec
 
 _NAME_RE = re.compile(r"[^A-Za-z0-9_-]")
 
+#: Reconnect budget after a mid-session drop (MCP-23). Hardcoded on purpose: per-server
+#: timeout/retry config is MCP-21's ruling, not this phase's.
+_MAX_RECONNECT_ATTEMPTS = 5
+
 
 def _sanitize(name: str) -> str:
     return _NAME_RE.sub("_", name)[:64]
+
+
+class MCPServerUnavailable(RuntimeError):
+    """A call named an MCP server with no live session. The message always names the server.
+
+    A RuntimeError subclass so every existing ``except RuntimeError`` / ``pytest.raises(
+    RuntimeError)`` keeps working."""
+
+    def __init__(self, server: str, message: str) -> None:
+        super().__init__(message)
+        self.server = server
 
 
 class MCPTool(Tool[EmptyArgs]):
@@ -292,6 +307,88 @@ class MCPCompleteTool(_MCPCapabilityTool[_CompleteArgs]):
             return self._failed(exc)
 
 
+class _EOFWatchStream:
+    """Wrap a transport read stream; call ``on_eof`` once when the stream ends.
+
+    The SDK never tells a ClientSession's owner that the transport died: on a killed stdio
+    server the dispatcher's read loop simply reaches end-of-stream, fans ``Connection closed``
+    out to pending requests, and returns — nothing reaches ``message_handler``. Watching the
+    stream ClientSession reads from is the one transport-agnostic place that end is visible.
+    """
+
+    def __init__(self, inner: Any, on_eof: Callable[[], None]) -> None:
+        import anyio  # lazy: only ever constructed inside _serve_once, where mcp is installed
+
+        self._inner = inner
+        self._on_eof = on_eof
+        self._fired = False
+        self._closed_errors = (
+            anyio.EndOfStream,
+            anyio.ClosedResourceError,
+            anyio.BrokenResourceError,
+        )
+
+    @property
+    def last_context(self) -> Any:
+        return getattr(self._inner, "last_context", None)
+
+    def _fire(self) -> None:
+        if not self._fired:
+            self._fired = True
+            self._on_eof()
+
+    async def receive(self) -> Any:
+        try:
+            return await self._inner.receive()
+        except self._closed_errors:
+            self._fire()
+            raise
+
+    def __aiter__(self) -> _EOFWatchStream:
+        return self
+
+    async def __anext__(self) -> Any:
+        try:
+            return await self._inner.__anext__()
+        except StopAsyncIteration:
+            self._fire()
+            raise
+        except self._closed_errors:
+            self._fire()
+            raise
+
+    def close(self) -> None:
+        close = getattr(self._inner, "close", None)
+        if close is not None:
+            close()
+
+    async def aclose(self) -> None:
+        await self._inner.aclose()
+
+    async def __aenter__(self) -> _EOFWatchStream:
+        return self
+
+    async def __aexit__(self, *exc_info: Any) -> None:
+        # Deliberately does NOT fire self._on_eof: a deliberate teardown cancels the dispatcher
+        # rather than draining it to EOF, and must not be reported as a drop.
+        await self._inner.aclose()
+
+
+def _describe(exc: BaseException) -> str:
+    """Unwrap a BaseExceptionGroup to its first leaf and render "Type: message"."""
+    while isinstance(exc, BaseExceptionGroup) and exc.exceptions:
+        exc = exc.exceptions[0]
+    text = str(exc)
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
+class _SessionEnd(NamedTuple):
+    """The result of one _serve_once attempt. ``cause is None`` means a deliberate stop."""
+
+    cause: str | None
+    tools: list[Tool]
+
+
 def _get_client_session() -> Any:
     """Return ``mcp.ClientSession``, looked up through this module's own globals first.
 
@@ -382,12 +479,29 @@ class MCPManager:
         self._close_events: dict[str, Any] = {}  # name -> asyncio.Event
         self._server_tools: dict[str, list[Tool]] = {}
         self._started = False
+        self._server_state: dict[str, str] = {}  # name -> "connected"|"reconnecting"|"disconnected"
+        self._disconnect_cause: dict[str, str] = {}  # name -> human-readable reason for last drop
+        self._reconnect_attempt: dict[str, int] = {}  # name -> current attempt (used by 12-03)
+        #: Called on the MCP loop thread as (server, removed_tools, added_tools) when a server's
+        #: tool set changes WITHOUT the user asking (a drop, and in 12-03 a reconnect). Harness
+        #: wires it to its ToolRegistry (12-04). Never called for start_server/stop_server —
+        #: those callers already update the registry themselves.
+        self.on_tools_changed: Callable[[str, list[Tool], list[Tool]], None] | None = None
 
     def _add_note(self, message: str) -> None:
         """Record a degradation without erasing the previous one."""
         if message not in self.notes:
             self.notes.append(message)
         self.note = "\n".join(self.notes)
+
+    def _emit_tools_changed(self, name: str, removed: list[Tool], added: list[Tool]) -> None:
+        """Call ``on_tools_changed`` if set. Never raises — this runs on the loop thread."""
+        if self.on_tools_changed is None:
+            return
+        try:
+            self.on_tools_changed(name, removed, added)
+        except Exception as exc:  # noqa: BLE001 - a listener failure must not wedge the manager
+            self._add_note(f"MCP server '{name}': tool-registry update failed: {exc}")
 
     def _ensure_loop(self) -> None:
         """Start the background event loop, lazily importing `mcp`. Raises if it is missing.
@@ -447,19 +561,34 @@ class MCPManager:
         self._close_events[name] = close_event
         return await ready
 
-    async def _serve(
+    async def _serve_once(
         self, name: str, cfg: MCPServerConfig, ready: asyncio.Future, close_event: asyncio.Event
-    ) -> None:
-        """The server's owning task: opens its OWN AsyncExitStack and lets it unwind here.
+    ) -> _SessionEnd:
+        """One connection attempt: opens its OWN AsyncExitStack and lets it unwind here.
 
         anyio binds each transport's cancel scope to the task that entered it, so `aclose()` may
-        only run in that same task (python-sdk issues #79/#922). Parking on `close_event` and
-        letting the `async with` unwind in place is what makes per-server teardown legal.
+        only run in that same task (python-sdk issues #79/#922). Parking on `close_event` (raced
+        against the transport's own end-of-stream signal) and letting the `async with` unwind in
+        place is what makes per-server teardown legal.
         """
         from contextlib import AsyncExitStack
 
         ClientSession = _get_client_session()
 
+        died = asyncio.Event()
+        last_error: list[BaseException] = []
+
+        async def _on_message(message: Any) -> None:
+            if isinstance(message, Exception):
+                # Recorded for the note only — a single malformed line is not a death (see
+                # 12-RESEARCH.md: a real transport drop is observed as end-of-stream, not an
+                # Exception item delivered here). Server notifications stay dropped exactly as
+                # the SDK default does; list_changed routing is MCP-24.
+                last_error[:] = [message]
+
+        connected = False
+        tools: list[Tool] = []
+        dropped_cause: str | None = None
         try:
             async with AsyncExitStack() as stack:
                 streams = await stack.enter_async_context(
@@ -467,11 +596,14 @@ class MCPManager:
                 )
                 # sse/stdio yield (read, write); streamable HTTP yields a 3rd
                 # get_session_id we don't need — take the first two either way.
-                read, write = streams[0], streams[1]
-                session = await stack.enter_async_context(ClientSession(read, write))
+                read = _EOFWatchStream(streams[0], died.set)
+                write = streams[1]
+                session = await stack.enter_async_context(
+                    ClientSession(read, write, message_handler=_on_message)
+                )
                 await session.initialize()
                 listed = await session.list_tools()
-                tools: list[Tool] = [
+                tools = [
                     MCPTool(
                         self,
                         name,
@@ -492,20 +624,74 @@ class MCPManager:
                 )
                 self._sessions[name] = session
                 self._server_tools[name] = tools
+                self._server_state[name] = "connected"
+                connected = True
                 if not ready.done():
                     ready.set_result(tools)
-                await close_event.wait()
-        except BaseException as exc:  # noqa: BLE001 - surfaced to the caller verbatim
+
+                stop_wait = asyncio.ensure_future(close_event.wait())
+                died_wait = asyncio.ensure_future(died.wait())
+                try:
+                    await asyncio.wait({stop_wait, died_wait}, return_when=asyncio.FIRST_COMPLETED)
+                finally:
+                    stop_wait.cancel()
+                    died_wait.cancel()
+                # Leaving the `async with` normally here (never raising out of it) keeps anyio's
+                # task groups from wrapping our own signal in an ExceptionGroup. A deliberate
+                # stop wins a same-tick race because close_event.is_set() is checked after wait.
+                if not close_event.is_set():
+                    dropped_cause = "the transport closed"
+                    if last_error:
+                        dropped_cause += f" after {_describe(last_error[0])}"
+        except Exception as exc:
+            if connected and not close_event.is_set():
+                # A post-connect failure escaping the transport's own task group is a drop.
+                dropped_cause = _describe(exc)
+            elif not connected:
+                # Connect-time failure — the caller (start_server) decides what to do.
+                raise
+            # else: teardown noise after a deliberate stop (research Pitfall 2) — swallow it.
+        finally:
+            # SC1: both dicts cleared in the same place, on every exit path.
+            self._sessions.pop(name, None)
+            self._server_tools.pop(name, None)
+        return _SessionEnd(dropped_cause, tools)
+
+    async def _serve(
+        self, name: str, cfg: MCPServerConfig, ready: asyncio.Future, close_event: asyncio.Event
+    ) -> None:
+        """The server's owning task for its whole life: one connection, currently no retry.
+
+        A bounded, backed-off reconnect loop around ``_serve_once`` is MCP-23 (plan 12-03); this
+        plan (MCP-26) only needs the drop to be observed and both dicts cleared.
+        """
+        try:
+            end = await self._serve_once(name, cfg, ready, close_event)
+        except BaseException as exc:  # noqa: BLE001 - surfaced to start_server verbatim
             if not ready.done():
                 ready.set_exception(exc)
-        finally:
-            self._sessions.pop(name, None)
+            return
+        if end.cause is not None:
+            self._on_drop(name, end.cause, end.tools)
+
+    def _on_drop(self, name: str, cause: str, tools: list[Tool]) -> None:
+        """Record and announce a mid-session drop (not a deliberate stop_server()/close())."""
+        self._server_state[name] = "disconnected"
+        self._disconnect_cause[name] = cause
+        self._add_note(
+            f"MCP server '{name}' disconnected ({cause}); its {len(tools)} tool(s) were "
+            "unregistered."
+        )
+        self._emit_tools_changed(name, tools, [])
 
     def stop_server(self, name: str, timeout: float = 10.0) -> None:
         """Signal one server's owning task to unwind its own stack, then wait for it."""
         close_event = self._close_events.pop(name, None)
         task = self._tasks.pop(name, None)
         self._server_tools.pop(name, None)
+        self._server_state.pop(name, None)
+        self._disconnect_cause.pop(name, None)
+        self._reconnect_attempt.pop(name, None)
         if close_event is None or task is None or self._loop is None:
             return
 
@@ -523,7 +709,9 @@ class MCPManager:
         return list(self._server_tools.get(name, []))
 
     def tools(self) -> list[Tool]:
-        return [tool for tools in self._server_tools.values() for tool in tools]
+        # A snapshot: the loop thread mutates _server_tools asynchronously, and iterating the
+        # live dict from the main thread could raise "dictionary changed size during iteration".
+        return [tool for tools in list(self._server_tools.values()) for tool in tools]
 
     def start(self) -> None:
         if self._started or not self.servers:
@@ -715,6 +903,9 @@ class MCPManager:
         self._tasks.clear()
         self._close_events.clear()
         self._server_tools.clear()
+        self._server_state.clear()
+        self._disconnect_cause.clear()
+        self._reconnect_attempt.clear()
 
 
 @asynccontextmanager

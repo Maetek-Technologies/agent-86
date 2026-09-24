@@ -2,10 +2,22 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
+from dataclasses import dataclass
+
 import pytest
 
 from agent86.config import MCPServerConfig, load_config
-from agent86.tools.mcp_client import MCPManager, MCPTool, _open_transport, _sanitize, build_mcp
+from agent86.tools.mcp_client import (
+    MCPListResourcesTool,
+    MCPManager,
+    MCPServerUnavailable,
+    MCPTool,
+    _open_transport,
+    _sanitize,
+    build_mcp,
+)
 from agent86.types import ToolCall
 
 
@@ -454,6 +466,289 @@ def _install_fake_transport(monkeypatch, tools, *, capabilities=None, responses=
     monkeypatch.setattr(mcp_client, "_open_transport", _fake_open_transport)
     monkeypatch.setattr(mcp_client, "ClientSession", _FakeSession, raising=False)
     return seen
+
+
+# --- Plan 12-01: a fake transport that can really die mid-session ---------------------------- #
+
+
+def _wait_until(predicate, timeout: float = 5.0) -> bool:
+    """Poll ``predicate()`` every 10ms until it's truthy or ``timeout`` elapses."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.01)
+    return predicate()
+
+
+@dataclass
+class _Up:
+    """One successful connection: the tool list (and optional capabilities) it offers."""
+
+    tools: list
+    caps: object | None = None
+
+
+class _DyingTransport:
+    """Controller for a fake transport whose live connection can really be dropped.
+
+    Unlike ``_install_fake_transport``'s cooperative fake (whose ``__aexit__``/``close_event``
+    behave synchronously), this wraps a real ``anyio`` memory object stream — closing its send
+    side ends the receive side's iteration exactly the way a killed stdio subprocess ends
+    ``stdout_reader``'s read loop (see 12-RESEARCH.md "The empirical correction"): no exception
+    reaches ``message_handler``, the stream just ends.
+    """
+
+    def __init__(self, attempts: list, *, responses: dict | None = None) -> None:
+        self.attempts = attempts
+        self.responses = responses
+        self.connects = 0
+        self.list_calls = 0
+        self.senders: list = []
+        self.handlers: list = []
+        self._current: _Up | None = None
+
+    def install(self, monkeypatch) -> _DyingTransport:
+        from contextlib import asynccontextmanager
+
+        import agent86.tools.mcp_client as mcp_client
+
+        transport = self
+
+        @asynccontextmanager
+        async def _open(cfg, env_passthrough=None):
+            import anyio
+
+            n = transport.connects
+            transport.connects += 1
+            attempt = transport.attempts[min(n, len(transport.attempts) - 1)]
+            if isinstance(attempt, Exception):
+                raise attempt
+            send, recv = anyio.create_memory_object_stream(16)
+            transport.senders.append(send)
+            transport._current = attempt
+            try:
+                yield (recv, object())
+            finally:
+                send.close()
+                recv.close()
+
+        class _Session:
+            def __init__(self, read, write, *a, message_handler=None, **k):
+                self._read = read
+                transport.handlers.append(message_handler)
+                current = transport._current
+                self._tools = current.tools if current is not None else []
+                caps = current.caps if current is not None else None
+                if caps is not None:
+                    self.server_capabilities = caps
+                self._reader: asyncio.Future | None = None
+
+            async def _drain(self) -> None:
+                async for _ in self._read:
+                    pass
+
+            async def __aenter__(self):
+                self._reader = asyncio.ensure_future(self._drain())
+                return self
+
+            async def __aexit__(self, *exc_info):
+                if self._reader is not None:
+                    self._reader.cancel()
+                    import contextlib
+
+                    with contextlib.suppress(BaseException):
+                        await self._reader
+                return False
+
+            async def initialize(self):
+                return None
+
+            async def list_tools(self):
+                transport.list_calls += 1
+                listed = _fake_result()
+                listed.tools = self._tools
+                return listed
+
+            async def call_tool(self, tool, arguments):
+                value = (transport.responses or {}).get("call_tool", "ok")
+                if callable(value):
+                    value = value(tool, arguments)
+                if isinstance(value, Exception):
+                    raise value
+                return _fake_result(content=[_fake_result(text=str(value))])
+
+            async def list_resources(self, **kw):
+                return _fake_result(resources=[])
+
+        monkeypatch.setattr(mcp_client, "_open_transport", _open)
+        monkeypatch.setattr(mcp_client, "ClientSession", _Session, raising=False)
+        return self
+
+    def kill(self, manager: MCPManager) -> None:
+        """Close the current connection's read stream from the manager's own loop thread."""
+        assert manager._loop is not None
+        manager._loop.call_soon_threadsafe(self.senders[-1].close)
+
+    def deliver(self, manager: MCPManager, exc: Exception) -> None:
+        """Deliver ``exc`` to the currently-installed ``message_handler``, and wait for it."""
+        assert manager._loop is not None
+        asyncio.run_coroutine_threadsafe(self.handlers[-1](exc), manager._loop).result(timeout=5)
+
+
+def test_death_eof_clears_sessions_and_tools(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a"), _fake_tool("b")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: manager.tools_for("srv") == [])
+        assert manager.tools() == []
+        assert "srv" not in manager._sessions
+        assert manager._tasks["srv"].done()
+    finally:
+        manager.close()
+
+
+def test_death_clears_capability_tools_too(monkeypatch):
+    caps = _FakeCaps(resources=_FakeResourcesCap(), prompts=_FakePromptsCap())
+    transport = _DyingTransport([_Up([_fake_tool("a")], caps=caps)]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        tools = manager.start_server("srv", MCPServerConfig(command="npx"))
+        assert len(tools) == 6  # 1 remote + 3 resource tools + 2 prompt tools
+        transport.kill(manager)
+        assert _wait_until(lambda: manager.tools_for("srv") == [])
+        assert manager.tools() == []
+    finally:
+        manager.close()
+
+
+def test_death_is_recorded_as_a_named_note(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(
+            lambda: any("MCP server 'srv' disconnected" in n for n in manager.notes)
+        )
+    finally:
+        manager.close()
+
+
+def test_death_notifies_tools_changed_listener(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    seen: list = []
+    manager.on_tools_changed = lambda s, removed, added: seen.append(
+        (s, [t.name for t in removed], list(added))
+    )
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: len(seen) == 1)
+        assert seen == [("srv", ["mcp__srv__a"], [])]
+    finally:
+        manager.close()
+
+
+def test_death_transport_exception_item_alone_is_not_death(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.deliver(manager, ValueError("bad line"))
+        time.sleep(0.3)
+        assert manager.tools_for("srv") != []
+        assert "srv" in manager._sessions
+    finally:
+        manager.close()
+
+
+def test_death_not_reported_for_stop_server(monkeypatch):
+    _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    seen: list = []
+    manager.on_tools_changed = lambda *a: seen.append(a)
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        manager.stop_server("srv")
+        assert not any("disconnected" in n for n in manager.notes)
+        assert seen == []
+    finally:
+        manager.close()
+
+
+def test_named_server_error_after_death(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        tools = manager.start_server("srv", MCPServerConfig(command="npx"))
+        transport.kill(manager)
+        assert _wait_until(lambda: "srv" not in manager._sessions)
+
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert isinstance(excinfo.value, RuntimeError)
+        assert "'srv'" in str(excinfo.value)
+        assert "disconnected" in str(excinfo.value)
+
+        mcp_tool = next(t for t in tools if t.name == "mcp__srv__a")
+        result = mcp_tool.run(ToolCall(id="1", name=mcp_tool.name, arguments={}), ctx=None)
+        assert result.ok is False
+        assert "'srv'" in (result.error or "")
+
+        list_resources_tool = MCPListResourcesTool(manager, "srv")
+        result2 = list_resources_tool.run(
+            ToolCall(id="2", name=list_resources_tool.name, arguments={}), ctx=None
+        )
+        assert result2.ok is False
+        assert "'srv'" in (result2.error or "")
+    finally:
+        manager.close()
+
+
+def test_named_server_error_never_connected():
+    manager = MCPManager({})
+    with pytest.raises(RuntimeError, match=r"^MCP server 'ghost' is not connected\.$"):
+        manager.call_tool("ghost", "x", {})
+
+
+def test_named_server_connection_closed_mid_call(monkeypatch):
+    pytest.importorskip("mcp")
+    from mcp.shared.exceptions import MCPError
+    from mcp.types import CONNECTION_CLOSED
+
+    exc = MCPError(CONNECTION_CLOSED, "Connection closed")
+    transport = _DyingTransport([_Up([_fake_tool("a")])], responses={"call_tool": exc})
+    transport.install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert "'srv'" in str(excinfo.value)
+    finally:
+        manager.close()
+
+
+def test_named_server_healthy_error_is_not_rewritten(monkeypatch):
+    pytest.importorskip("mcp")
+    from mcp.shared.exceptions import MCPError
+
+    exc = MCPError(-32602, "bad params")
+    transport = _DyingTransport([_Up([_fake_tool("a")])], responses={"call_tool": exc})
+    transport.install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("srv", MCPServerConfig(command="npx"))
+        with pytest.raises(MCPError) as excinfo:
+            manager.call_tool("srv", "a", {})
+        assert "disconnected" not in str(excinfo.value)
+        assert "bad params" in str(excinfo.value)
+    finally:
+        manager.close()
 
 
 def test_fake_transport_without_capabilities_mounts_only_remote_tools(monkeypatch):
