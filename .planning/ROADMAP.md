@@ -50,7 +50,8 @@ implementation phases are now written from its recommended breakdown
   five-server corpus (recording versions), and settle the four contract-touching ADRs; audit-only,
   no implementation
   — **5 plans**, 4 waves
-- [x] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` / (completed 2026-09-24)
+- [x] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` /
+ (completed 2026-09-24)
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
   — **4 plans**, 4 waves
@@ -164,10 +165,20 @@ session is running); `run --json` keys additive-only.
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 15 (renumbered 12 on promotion); defect first
 flagged in [../docs/BACKLOG.md](../docs/BACKLOG.md) § 999.0 audit head start, confirmed by Phase 10
-**Plans**: 0 plans
+**Plans**: 7 plans in 4 waves
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 12 to break down)
+- [ ] 12-01-PLAN.md — end-of-stream death detection, both dicts popped, named-server errors,
+  `on_tools_changed` hook (wave 1, MCP-26)
+- [ ] 12-02-PLAN.md — RLock-guarded ToolRegistry + identity-checked `unregister_tool` (wave 1)
+- [ ] 12-03-PLAN.md — bounded reconnect with local jittered backoff; stop/close never retried
+  (wave 2, MCP-23)
+- [ ] 12-04-PLAN.md — Harness wires `on_tools_changed` into its registry so dead tools leave the
+  model's tool list (wave 2)
+- [ ] 12-05-PLAN.md — real-stdio kill-mid-session integration test via a fixture pid file (wave 2)
+- [ ] 12-06-PLAN.md — real-stdio reconnect test + SSE/streamable-HTTP kill tests or recorded
+  accepted risk (wave 3)
+- [ ] 12-07-PLAN.md — docs, VALIDATION sign-off, phase gate, TUI human-verify (wave 4)
 
 ## Next
 
