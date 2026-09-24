@@ -477,7 +477,12 @@ number v0.7 existed to remove.
    `list_dir`, `web_fetch`, `python_exec`, plus `remember`/`recall`, `use_skill`, and
    `delegate`. (A `web_search` tool is *not* implemented — see §15.)
 2. **MCP client** — connect to MCP servers (stdio/HTTP); their tools are registered
-   into the same registry with the same schema/guardrail treatment.
+   into the same registry with the same schema/guardrail treatment. A mounted server's
+   **resources, prompt templates and argument completions** are mounted as additional per-server
+   tools too (`mcp__{server}__list_resources`, `read_resource`, `list_resource_templates`,
+   `subscribe_resource`, `unsubscribe_resource`, `list_prompts`, `get_prompt`, `complete`), gated
+   on the capabilities the server itself advertised at `initialize()` — a server that declares
+   none of them contributes none of those tools.
 3. **Skills** — self-contained folders discovered from skill paths:
 
 ```
@@ -1143,11 +1148,22 @@ against protocol revision `2025-11-25` — the revision agent86's client negotia
 matrix, with a rating, corpus-exercise record and in/out ruling per capability, is
 `docs/mcp-conformance-matrix.md`; the audit narrative, corpus pins and evidence are
 `docs/mcp-conformance-audit-2026-09.md`. The capabilities ruled *out* there are listed below as
-conformance statements rather than left as silent gaps.
+conformance statements rather than left as silent gaps. Phase 11 re-ruled five of those rows from
+that sweep — four to `implemented` and `CAP-RESOURCE-SUBSCRIBE` to `partial`, all five moving from
+`out` to `in` — so the table below no longer lists them.
 
 **Described above as design intent, deliberately not implemented yet.** Each is marked *not
 built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 
+> Five rows left this table in v1.1's Phase 11: MCP client resources (`CAP-RESOURCES`), resource
+> templates (`CAP-RESOURCE-TEMPLATES`), resource subscriptions (`CAP-RESOURCE-SUBSCRIBE`),
+> prompts (`CAP-PROMPTS`) and completion (`CAP-COMPLETION`) — `list_resources`, `read_resource`,
+> `list_resource_templates`, `subscribe_resource`/`unsubscribe_resource`, `list_prompts`,
+> `get_prompt` and `complete` are now real, capability-gated call sites
+> (`docs/mcp-conformance-matrix.md`). One thing did not ship with them: the resource-update
+> notification a subscription exists to deliver is still dropped for lack of a `message_handler`,
+> so `CAP-RESOURCE-SUBSCRIBE` moved to `partial` rather than `implemented` — that remaining half
+> is MCP-24, workstream C.
 > Three rows left this table in v1.0, all of them §9 observability: a configured OTel exporter
 > (the tracer now owns a `TracerProvider` with a `BatchSpanProcessor`, rather than handing spans
 > to the no-op global provider), flight-recorder **redaction**, and flight-recorder **rotation**.
@@ -1174,11 +1190,6 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 | A `trace show` view of *what* a compaction summarized — the originals are archived, but unreadable from the CLI | §9 observability | BACKLOG § Context & cost |
 | MCP client structured/typed tool output (`CAP-STRUCTURED-OUTPUT`) — `CallToolResult.structured_content` is never read, silently dropped; ADR 0004 leaves this unaddressed pending a future ruling | §7 tools | matrix |
 | MCP client non-text content blocks (`CAP-CONTENT-BLOCKS`) — image/audio/embedded-resource blocks render as a Python repr, not their real payload | §7 tools | matrix; MCP-25 |
-| MCP client resources — list and read (`CAP-RESOURCES`) — no corpus server's primary value depends on it yet | §7 tools | matrix; MCP-14 |
-| MCP client resource templates (`CAP-RESOURCE-TEMPLATES`) — depends on `CAP-RESOURCES` shipping first | §7 tools | matrix; MCP-14 |
-| MCP client resource subscriptions (`CAP-RESOURCE-SUBSCRIBE`) — only the conformance instrument exercises it | §7 tools | matrix; MCP-14 |
-| MCP client prompts — list and get (`CAP-PROMPTS`) — only the conformance instrument exercises it | §7 tools | matrix; MCP-15 |
-| MCP client completion / argument autocomplete (`CAP-COMPLETION`) — depends on `CAP-PROMPTS` shipping first | §7 tools | matrix; MCP-15 |
 | MCP client sampling (`CAP-SAMPLING`) — opt-in per server, deferred until a realistic corpus server demands it | §7 tools | matrix; MCP-16 |
 | MCP client elicitation (`CAP-ELICITATION`) — opt-in per server, deferred pending four preconditions | §7 tools | matrix; MCP-16 |
 | MCP client roots (`CAP-ROOTS`) — correctly declared absent, and the spec itself deprecates the capability in `2026-07-28` | §7 tools | matrix; MCP-16 |
