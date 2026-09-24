@@ -8,6 +8,8 @@ CAP-COMPLETION gates Phase 11 adds. The binary resource exists so a client is pr
 visible marker for it, never inline its base64 into ``ToolResult.content``. ``get_env`` is the
 SEC-04 probe: it echoes this server process's own environment, letting a stdio-driven test prove
 the subprocess received ``SandboxPolicy.scrubbed_env()`` rather than the host environment.
+``AGENT86_LIVE_MCP_PID_FILE``, if set, makes this process write its own PID to that path
+immediately before serving, so a lifecycle test can find and kill it mid-session (MCP-26/23).
 
 Built on ``mcp.server.mcpserver.MCPServer`` — the SDK's own server API since mcp 2.0, which
 serves both transports as ASGI apps over uvicorn. (``mcp.server.fastmcp`` is gone: FastMCP
@@ -18,6 +20,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 from mcp.server.mcpserver import MCPServer
 
@@ -78,6 +81,13 @@ def main() -> None:
             values = [s for s in STYLE_COMPLETIONS if s.startswith(argument.value or "")]
             return Completion(values=values, total=len(values), has_more=False)
         return None
+
+    # Opt-in, test-only: lets a lifecycle test find and kill THIS process mid-session (MCP-26/23).
+    # A file, not a tool, so the fixture's tool set — which several tests assert exactly — is
+    # unchanged.
+    pid_file = os.environ.get("AGENT86_LIVE_MCP_PID_FILE")
+    if pid_file:
+        Path(pid_file).write_text(str(os.getpid()), encoding="utf-8")
 
     # host/port are per-transport run options in mcp 2.0, not constructor settings.
     mcp.run(transport=transport, host="127.0.0.1", port=port)
