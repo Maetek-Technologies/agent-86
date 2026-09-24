@@ -38,6 +38,7 @@ from agent86.config import (
     MCPServerConfig,
 )
 from agent86.tools.base import EmptyArgs, Tool, ToolContext
+from agent86.tools.mcp_content import render_content_block, truncate_result
 from agent86.types import ToolCall, ToolResult, ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -1231,10 +1232,11 @@ class MCPManager:
         session = self._sessions.get(server)
         if loop is None or session is None:
             raise self._unavailable_error(server)
+        limit = self._max_result_chars_for(server)
 
         async def _call() -> str:
             result = await session.call_tool(tool, arguments)
-            return _content_to_text(result)
+            return _content_to_text(result, limit=limit, server=server)
 
         return self._await_result(
             server, asyncio.run_coroutine_threadsafe(_call(), loop), f"'{tool}'"
@@ -1286,10 +1288,12 @@ class MCPManager:
 
     def read_resource(self, server: str, uri: str) -> tuple[str, dict[str, Any]]:
         """``resources/read``. Binary contents are marked, never inlined (D-02)."""
+        limit = self._max_result_chars_for(server)
 
         async def _call(session: Any) -> tuple[str, dict[str, Any]]:
             result = await session.read_resource(uri)
             text, meta = _resource_contents_to_text(list(getattr(result, "contents", None) or []))
+            text = truncate_result(text, limit, server)
             return text, {"uri": uri, **meta}
 
         return self._on_session(server, _call)
@@ -1339,10 +1343,12 @@ class MCPManager:
         self, server: str, name: str, arguments: dict[str, str] | None = None
     ) -> tuple[str, dict[str, Any]]:
         """``prompts/get``. The server's own description, if any, heads the transcript."""
+        limit = self._max_result_chars_for(server)
 
         async def _call(session: Any) -> tuple[str, dict[str, Any]]:
             result = await session.get_prompt(name, arguments or None)
             text, meta = _prompt_messages_to_text(list(getattr(result, "messages", None) or []))
+            text = truncate_result(text, limit, server)
             description = getattr(result, "description", None)
             if description:
                 text = f"{description}\n\n{text}"
@@ -1520,15 +1526,23 @@ def _open_transport(cfg: MCPServerConfig, env_passthrough: list[str] | None = No
     return _streamable_http(cfg.url, cfg.headers)
 
 
-def _content_to_text(result: Any) -> str:
-    parts: list[str] = []
-    for chunk in getattr(result, "content", None) or []:
-        text = getattr(chunk, "text", None)
-        parts.append(text if text is not None else str(chunk))
+def _content_to_text(
+    result: Any, *, limit: int = DEFAULT_MCP_MAX_RESULT_CHARS, server: str = ""
+) -> str:
+    """A tools/call result as prompt text: every block rendered (MCP-25), capped (MCP-22).
+
+    Non-text blocks go through ``render_content_block`` — a named marker, never the raw chunk's
+    Python repr, never inlined base64. The joined body is cut at ``limit`` (the server's
+    ``max_result_chars``, ADR 0004) with a visible marker; ``structured_content`` is not read
+    (ADR 0004 scopes it out). Never raises.
+    """
+    parts = [render_content_block(chunk) for chunk in getattr(result, "content", None) or []]
     body = "\n".join(parts) if parts else "(no content)"
-    if getattr(result, "isError", False):
-        return f"ERROR: {body}"
-    return body
+    body = truncate_result(body, limit, server)
+    is_error = getattr(result, "is_error", None)
+    if is_error is None:
+        is_error = getattr(result, "isError", False)  # pre-2.0 SDK spelling
+    return f"ERROR: {body}" if is_error else body
 
 
 def _row(*cells: object) -> str:
@@ -1576,9 +1590,8 @@ def _resource_contents_to_text(contents: list[Any]) -> tuple[str, dict[str, Any]
     Returns ``(content_text, metadata)``. A text part is rendered verbatim; a binary part
     becomes a one-line marker naming its mime type and base64 length, with the same facts
     recorded under ``metadata["binary"]``. The base64 itself is carried nowhere (D-02): it is
-    unusable to the model as text, unbounded in size, and bounding an MCP result is ADR 0004 /
-    MCP-22's question, not this one's. Representing non-text content properly is
-    CAP-CONTENT-BLOCKS / MCP-25.
+    unusable to the model as text and unbounded in size; the caller caps the joined text at the
+    server's max_result_chars (MCP-22).
     """
     if not contents:
         return "(no content)", {}
@@ -1627,9 +1640,9 @@ def _prompt_messages_to_text(messages: list[Any]) -> tuple[str, dict[str, Any]]:
     """Render ``GetPromptResult.messages`` as a ``[role]: text`` transcript.
 
     A non-text content block (image, audio, embedded resource, resource link) becomes a NAMED
-    marker — never ``str(block)``, the Python repr that ``_content_to_text`` falls back to and
-    that CAP-CONTENT-BLOCKS / ADR 0004 record as a defect (D-07). Repairing that older path is
-    MCP-25, workstream C; this is new code and simply does not have the bug.
+    marker — never ``str(block)``, the Python repr that older code used to fall back to.
+    ``_content_to_text`` now renders the same block types through ``render_content_block``
+    (MCP-25).
     """
     if not messages:
         return "(no messages)", {}
