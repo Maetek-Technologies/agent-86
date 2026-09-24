@@ -46,7 +46,19 @@ end-to-end; the pinned `server-filesystem@2026.8.31` turned out to declare no re
 capability at all, so resources are proven via the CI fixture's real stdio round trip instead.
 1264 tests green.
 
-Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-26).
+**Phase 12 complete (2026-09-24)** — the zombie-tool desync is fixed and a dropped transport
+reconnects (MCP-26, MCP-23). A server death is detected at end-of-stream on the read stream
+(`_EOFWatchStream`) — the SDK never delivers a stdio EOF to `message_handler`, so the originally
+targeted `finally` was unreachable — and both `_sessions` and `_server_tools` are cleared together,
+with the change pushed into `Harness.registry` so the model stops being offered dead tools. Calls to
+a dead server raise `MCPServerUnavailable` naming it. `_serve` retries up to 5 times with jittered
+backoff (0.5 s base, 30 s cap) and re-lists tools and capabilities on reconnect; stdio, SSE and
+streamable HTTP are all proven against a real killed process. Human verification exposed that the
+TUI only showed MCP notes at startup; gap plan 12-08 made them live (TUI transcript, `--plain`,
+`/tools` per-server state) and made start failures name the real cause plus the server's stderr.
+1319 tests green.
+
+Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-25).
 
 **Target features:**
 
@@ -346,6 +358,12 @@ without hand-editing TOML or restarting.
 - ✓ **MCP-15**: **MCP prompts and argument completion are first-class** — `prompts/list`,
   `prompts/get` and `completion/complete` as capability-gated per-server tools, `ref_type`
   validated before any wire call — Validated in Phase 11: Resources and prompts become first-class
+- ✓ **MCP-26**: **A dead MCP server's tools are unregistered, not left callable-but-broken** —
+  end-of-stream death detection, registry sync, calls name the dead server — Validated in Phase 12:
+  Fix the zombie-tool desync and add reconnect
+- ✓ **MCP-23**: **A dropped MCP transport reconnects** — bounded retry with backoff, fresh
+  `list_tools()`/capabilities on reconnect — Validated in Phase 12: Fix the zombie-tool desync and
+  add reconnect
 
 ### Active
 
@@ -496,4 +514,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 — Phase 11 (Resources and prompts become first-class) complete.*
+*Last updated: 2026-09-24 — Phase 12 (Fix the zombie-tool desync and add reconnect) complete.*
