@@ -59,9 +59,13 @@ implementation phases are now written from its recommended breakdown
  (completed 2026-09-24)
   mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
   closing MCP-26 and MCP-23
-- [x] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C: (completed 2026-09-24)
+- [x] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C:
+ (completed 2026-09-24)
   configurable connect/call timeouts, ADR 0004's visible result cap, and real rendering of
   image/audio/embedded-resource blocks, closing MCP-21, MCP-22 and MCP-25
+- [ ] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas
+  deferred to first use per ADR 0003 (names stay up front), and server notifications routed so a
+  mid-session `list_changed` re-fetches the tool list, closing MCP-20 and MCP-24
 
 ## Phase Details
 
@@ -235,6 +239,47 @@ Plans:
 - [x] 13-06-PLAN.md — after-evidence, docs, `CAP-CONTENT-BLOCKS` → implemented, VALIDATION
   sign-off, phase gate (wave 4)
 
+#### Phase 14: Schema deferral and notification handling
+**Workstream**: C
+**Goal**: The system prompt's fixed overhead shrinks by deferring MCP tool schemas to first use
+(never tool names), and a server-initiated notification — `list_changed`, progress, or otherwise —
+reaches something other than a no-op.
+**Depends on**: Phase 12 (the `_serve` lifecycle and the `_on_message` handler it installed) and
+Phase 13 (the per-server config surface and result cap a re-fetched tool list must respect)
+**Requirements**: MCP-20, MCP-24
+**Matrix rows closed**: `CAP-PROGRESS`, `CAP-LIST-CHANGED` (both `absent` → `implemented`;
+`CAP-LOGGING` and `CAP-CANCELLATION` share the same notification routing and may close
+incidentally, though neither carries its own deferred requirement ID)
+**Success Criteria** (what must be TRUE):
+  1. The compiled system prompt still lists every mounted server's tool names (plus server
+     instructions) up front; only the full JSON Schema payload is withheld until a tool's first
+     call, per ADR 0003.
+  2. `Harness._context_budget` (`orchestration/loop.py:458`) accounts for a materialising schema's
+     cost inside the step that triggers it, not only on the next request's recomputation.
+  3. The `_on_message` handler Phase 12 installed (`mcp_client.py:928`, passed at `:959`) routes
+     `notifications/tools/list_changed` (and the `resources`/`prompts` siblings) into a re-fetch of
+     that server's tool list instead of dropping it, so `/config mcp`'s live mount reflects a
+     server that changed its tools mid-session without a restart.
+**Sizing signal**: `Harness._context_budget`'s per-request recomputation
+(`docs/ARCHITECTURE.md:286-290`) already structurally tolerates a growing `tool schemas` term, per
+ADR 0003's Context section — this phase applies that finding rather than re-deriving it. The
+audit's "no `message_handler` is passed anywhere" (`mcp_client.py:219`) is stale since Phase 12:
+a handler now exists but records transport exceptions only and drops every server notification
+(comment at `mcp_client.py:930-933` defers `list_changed` routing to MCP-24), so the hook point is
+already in place.
+**Risk / constraint**: `run --json`'s keys stay additive-only for any new key signaling a
+materialised schema or a live tool-list change, per ADR 0003's second-order requirement. This is
+the most structurally invasive workstream-C phase — `_context_budget` and the compiled-prompt path
+are both touched — and a tool-list re-fetch must compose with Phase 12's registry unregistration
+on server death rather than race it. No new core dependency; cold-start unaffected.
+**Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown" → Proposed Phase 17 (renumbered 14 on promotion); ruling in
+[../docs/adr/0003-mcp-schema-deferral-prompt-contract.md](../docs/adr/0003-mcp-schema-deferral-prompt-contract.md)
+**Plans**: 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 14 to break down)
+
 ## Next
 
 **Phase 10 — MCP Conformance Audit — is complete** (5/5 plans, 2026-09-23). The conformance
@@ -273,9 +318,12 @@ blocks render as named markers, and `CAP-CONTENT-BLOCKS` is now `implemented`. A
 `mcp-server-git`'s `git_show` recorded as the accepted risk (no narrowing argument; raise the
 per-server cap). Also fixed: mcp 2.0's `is_error` rename had silently dropped the `ERROR:` prefix.
 
-Phases 14+ remain **unwritten by design** and are promoted one at a time from the audit's
-recommended breakdown via `/gsd:add-phase`: schema deferral/notification handling (C), and OAuth discovery/authorization and token refresh against
-GitHub's hosted server (B). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
+**Phase 14 — Schema deferral and notification handling — is next** (not yet planned): workstream
+C's last phase, MCP-20 and MCP-24. Plan it with `/gsd:plan-phase 14`.
+
+Phases 15+ remain **unwritten by design** and are promoted one at a time from the audit's
+recommended breakdown via `/gsd:add-phase`: OAuth discovery/authorization and token refresh
+against GitHub's hosted server (B). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
 rules all three `out` under the BACKLOG's "the ceiling is demand" rule until a realistic corpus
 server needs them (ADRs 0001/0002). Sizing, corrected by the audit: **C is larger than A on
 findings and deferred requirements, and materially larger than B on every metric**; A leads only
@@ -326,7 +374,8 @@ head start — start there, not from the spec.
 `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Promoted so far:
 **Phase 11** (999.0b, workstream A — MCP-14/MCP-15, complete 2026-09-24) and **Phase 12**
 (999.0d, workstream C — MCP-26/MCP-23, complete 2026-09-24) and **Phase 13** (999.0d, workstream
-C — MCP-21/MCP-22/MCP-25, complete 2026-09-24). The rest are promoted one at a time.
+C — MCP-21/MCP-22/MCP-25, complete 2026-09-24) and **Phase 14** (999.0d, workstream C —
+MCP-20/MCP-24, promoted 2026-09-24). The rest are promoted one at a time.
 **Goal:** The three workstreams themselves.
 **Requirements:** MCP-16…MCP-26, per the audit's breakdown.
 **Plans:** 0 plans

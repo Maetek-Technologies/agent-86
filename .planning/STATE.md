@@ -1258,12 +1258,21 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   and ADR 0004 already rules the cap. Audit line refs re-pinned to post-Phase-12 `mcp_client.py`
   (timeouts at :808/:1147/:1157, `str(chunk)` fallback at :1442).
 
+- Phase 14 added: Schema deferral and notification handling — workstream C (MCP-20, MCP-24),
+  promoted 2026-09-24 from the same breakdown (Proposed Phase 17, renumbered on promotion) once
+  Phase 13 landed; the audit ruled it last among the workstream-C phases as the most structurally
+  invasive. Audit refs re-pinned: its "no `message_handler` is passed anywhere"
+  (`mcp_client.py:219`) is stale — Phase 12 installed `_on_message` (`mcp_client.py:928`, passed
+  at `:959`), which records transport exceptions and drops every notification, so MCP-24 extends
+  that handler rather than adding one; `_context_budget` is at `orchestration/loop.py:458`.
+
 ## Current Position
 
-Phase: 13 (Per-server timeouts, the result cap, and non-text content) — COMPLETE
-Plan: 6 of 6
-Status: Milestone v1.1 at 4/4 written phases complete (Phases 10-13); verification passed (7/7);
-phases 14+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
+Phase: 14 (Schema deferral and notification handling) — NOT PLANNED
+Plan: 0 of TBD
+Status: Milestone v1.1 at 4/5 written phases complete (Phases 10-13; Phase 14 promoted
+2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
+a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
 ## Next Step
