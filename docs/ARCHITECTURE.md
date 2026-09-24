@@ -482,7 +482,12 @@ number v0.7 existed to remove.
    tools too (`mcp__{server}__list_resources`, `read_resource`, `list_resource_templates`,
    `subscribe_resource`, `unsubscribe_resource`, `list_prompts`, `get_prompt`, `complete`), gated
    on the capabilities the server itself advertised at `initialize()` — a server that declares
-   none of them contributes none of those tools.
+   none of them contributes none of those tools. A server that dies mid-session has its tools
+   unregistered from the registry the moment its transport's read stream ends — the manager
+   watches for end-of-stream, not a failed call; `message_handler` is installed but server
+   notifications are still dropped (MCP-24) — and every error afterward names the server. A
+   dropped transport is retried up to 5 times with exponential backoff before the server is
+   reported disconnected.
 3. **Skills** — self-contained folders discovered from skill paths:
 
 ```

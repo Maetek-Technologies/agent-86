@@ -606,6 +606,13 @@ and `redact`, tool-call **arguments** are scanned as well — a model that reads
 and posts it to a URL never puts it in its prose. Findings are recorded, not blocked: the approval
 gate is what stops side effects.
 
+**MCP servers recover too.** A server that dies mid-session — its tools disappearing from both
+`MCPManager` and the tool list the model is offered — is detected the moment its transport's read
+stream ends, not on the next call that happens to fail; every subsequent error names the server.
+The manager then retries the dropped transport up to 5 times with exponential backoff and jitter
+(capped at 30s) before giving up, re-listing the server's tools on a successful reconnect and
+reporting every attempt in `/tools`'s MCP notes.
+
 ## Security model
 
 The model is untrusted, so the harness — not the model — decides what a tool may reach.

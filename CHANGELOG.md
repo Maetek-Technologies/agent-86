@@ -19,11 +19,31 @@ All notable changes to agent86 are documented here. The format follows
   approval-gated for that reason. Closes MCP-14 and MCP-15, moving `CAP-RESOURCES`,
   `CAP-RESOURCE-TEMPLATES`, `CAP-PROMPTS` and `CAP-COMPLETION` to `implemented` in
   [`docs/mcp-conformance-matrix.md`](docs/mcp-conformance-matrix.md).
+- **MCP servers reconnect after a dropped transport.** A server killed mid-session is retried
+  up to 5 attempts with exponential backoff and equal jitter (0.5s base, doubling, capped at
+  30s) before the manager gives up; a successful reconnect re-lists the server's tools and
+  capabilities from a fresh `list_tools()` call and re-mounts them into the registry the model
+  is offered, and every attempt — and the eventual reconnect or give-up — is visible in
+  `/tools`'s MCP notes. These limits are fixed for now (per-server configurable retry/backoff is
+  MCP-21); `${VAR}` secrets are resolved once at server start, not re-resolved on each reconnect
+  attempt. A deliberate `stop_server()`/`close()` — even one issued mid-backoff — is never
+  mistaken for a drop worth retrying. Closes MCP-23.
 
 ### Changed
 
 - **Development Status classifier is now `5 - Production/Stable`.** 1.0.0 is published on PyPI
   (2026-09-21), so the package metadata makes the claim the release earned.
+
+### Fixed
+
+- **A dead MCP server no longer leaves zombie tools.** A server that dies mid-session — its
+  transport's read stream reaching end-of-stream — is now detected by `_EOFWatchStream`, which
+  sits one layer above `ClientSession` so the signal is transport-agnostic (stdio/SSE/streamable
+  HTTP). The moment death is observed, its tools — including its resource, prompt and completion
+  tools — are unregistered from both `MCPManager.tools()` and `Harness.registry`, the list the
+  model is actually offered, instead of only failing quietly on the next call. Every subsequent
+  error, whether the server is disconnected, reconnecting or gone for good, names the server and
+  its state instead of a generic "MCP session not available". Closes MCP-26.
 
 ## [1.0.0] - 2026-09-21
 

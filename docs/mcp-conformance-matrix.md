@@ -99,6 +99,9 @@ Each of these is recorded in `docs/ARCHITECTURE.md` §15 as a stated non-goal, n
     (`MCPServerConfig.max_result_chars`, default 8,000 characters).
   - Per-server timeouts — `docs/mcp-conformance-audit-2026-09.md`'s nine head-start rows, row 4
     (routed to MCP-21, workstream C).
-  - Reconnect after a dropped transport — same report, row 8 (routed to MCP-23, workstream C).
+  - Reconnect after a dropped transport — same report, row 8 (routed to MCP-23, workstream C) —
+    closed by Phase 12 (reconnect with bounded backoff).
   - The `_serve`/`_server_tools` desync (the zombie-tool defect) — same report, row 7 and its
-    dedicated "Row 7 in detail" section (routed to MCP-26, workstream C).
+    dedicated "Row 7 in detail" section (routed to MCP-26, workstream C) — closed by Phase 12
+    (end-of-stream death detection; tools unregistered from both the manager and the harness
+    registry).
