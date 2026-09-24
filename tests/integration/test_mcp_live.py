@@ -14,9 +14,11 @@ extra is present, and still skips cleanly on CI's minimal ``.[dev]`` install.
 
 from __future__ import annotations
 
+import contextlib
 import socket
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -128,3 +130,93 @@ def test_live_transport_lists_and_calls_tools(live_server, request):
         assert mgr.call_tool("live", "shout", {"text": "it works"}).strip() == "IT WORKS"
     finally:
         mgr.close()
+
+
+# --- Plan 12-06: SSE / streamable-HTTP kill-mid-session (research Open Question 4, MCP-26) - #
+
+
+@contextlib.contextmanager
+def _spawn_live_server(server_transport: str, path: str, tmp_path: Path):
+    """Launch the live MCP server subprocess for a transport; yield (url, proc).
+
+    Same launch/wait/log logic as the `live_server` fixture, but hands back the process handle
+    so the caller can kill it mid-session (the fixture itself is left unchanged).
+    """
+    port = _free_port()
+    log = tmp_path / f"live-mcp-kill-{server_transport}.log"
+    with log.open("wb") as sink:
+        proc = subprocess.Popen(
+            [sys.executable, str(_SERVER), server_transport, str(port)],
+            stdout=sink,
+            stderr=subprocess.STDOUT,
+        )
+        try:
+            try:
+                _wait_for_port(port)
+            except RuntimeError as exc:
+                output = log.read_text(encoding="utf-8", errors="replace").strip()
+                raise RuntimeError(f"{exc}\n--- server output ---\n{output}") from exc
+            yield f"http://127.0.0.1:{port}{path}", proc
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+
+
+def _wait_until(predicate, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
+@pytest.mark.parametrize("case", _CASES)
+def test_live_transport_mid_session_kill_is_detected(case, tmp_path, monkeypatch):
+    """A killed SSE/streamable-HTTP server is detected — passively or on the next call.
+
+    `_MAX_RECONNECT_ATTEMPTS` is pinned to 0: nothing will be listening on the killed port to
+    reconnect to, so this test asserts pure death-detection (MCP-26), not MCP-23's retry loop
+    (already proven against real stdio in plan 12-06's stdio test).
+    """
+    import agent86.tools.mcp_client as mcp_client
+
+    server_transport, path, explicit = case
+    monkeypatch.setattr(mcp_client, "_MAX_RECONNECT_ATTEMPTS", 0)
+
+    with _spawn_live_server(server_transport, path, tmp_path) as (url, proc):
+        cfg = Config(mcp_servers={"live": MCPServerConfig(url=url, transport=explicit)})
+        mgr = _build_ready_manager(cfg)
+        try:
+            assert mgr.call_tool("live", "add", {"a": 1, "b": 1}).strip() == "2"
+
+            proc.kill()
+            proc.wait(timeout=5)
+
+            detected = _wait_until(lambda: mgr.tools_for("live") == [], 10.0)
+            phase = "passively"
+
+            if not detected:
+                phase = "on next call"
+                call_error: list[BaseException] = []
+
+                def _call() -> None:
+                    try:
+                        mgr.call_tool("live", "add", {"a": 1, "b": 1})
+                    except BaseException as exc:  # noqa: BLE001 - recorded, not raised, cross-thread
+                        call_error.append(exc)
+
+                caller = threading.Thread(target=_call, daemon=True)
+                caller.start()
+                caller.join(timeout=25.0)
+
+                detected = _wait_until(lambda: mgr.tools_for("live") == [], 20.0)
+
+            print(f"{server_transport}: detected {phase}")
+            assert detected
+
+            with pytest.raises(RuntimeError, match="'live'"):
+                mgr.call_tool("live", "add", {"a": 1, "b": 1})
+        finally:
+            mgr.close()
