@@ -17,7 +17,13 @@ from pathlib import Path
 import pytest
 
 from agent86.config import MCPServerConfig, load_config
-from agent86.tools.mcp_client import MCPManager, MCPTool, build_mcp
+from agent86.tools.mcp_client import (
+    MCPManager,
+    MCPServerUnavailable,
+    MCPTimeout,
+    MCPTool,
+    build_mcp,
+)
 from agent86.types import ToolCall
 
 # The stdio lifecycle tests below drive the real `live_mcp_server.py`, which is built on the
@@ -433,5 +439,182 @@ def test_mid_session_kill_reconnects_with_fresh_tools(tmp_path):
 
         assert any("MCP server 'alpha' reconnected" in n for n in manager.notes)
         assert not manager._tasks["alpha"].done()
+    finally:
+        manager.close()
+
+
+# --- Plan 13-05: real-stdio proof of per-server timeouts, the result cap, and non-text ---- #
+# --- content blocks (SC1-SC3, MCP-21/MCP-22/MCP-25) --------------------------------------- #
+
+
+def _extra_cfg(**limits: object) -> MCPServerConfig:
+    """A stdio cfg for `alpha`-style servers with Task 1's opt-in extra tools mounted.
+
+    ``pid_file`` (if passed) is popped and routed to AGENT86_LIVE_MCP_PID_FILE so a caller can
+    combine the extra-tools probe with the existing kill/reconnect helpers; every remaining
+    keyword is forwarded straight to MCPServerConfig (e.g. call_timeout_s, max_result_chars).
+    """
+    env = {"AGENT86_LIVE_MCP_EXTRA_TOOLS": "1"}
+    pid_file = limits.pop("pid_file", None)
+    if pid_file is not None:
+        env["AGENT86_LIVE_MCP_PID_FILE"] = str(pid_file)
+    return MCPServerConfig(
+        command=sys.executable,
+        args=[str(_SERVER), "stdio", "0"],
+        env=env,
+        **limits,  # type: ignore[arg-type]
+    )
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_call_timeout_is_per_server():
+    """SC1: a tool slower than call_timeout_s fails naming the server and the field, and the
+    same server answers the next call — the cancelled call didn't take the session down."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("slow", _extra_cfg(call_timeout_s=1.0), timeout=30.0)
+        t0 = time.monotonic()
+        with pytest.raises(MCPTimeout) as excinfo:
+            manager.call_tool("slow", "sleep_for", {"seconds": 10})
+        elapsed = time.monotonic() - t0
+        assert elapsed < 6
+        message = str(excinfo.value)
+        assert "'slow'" in message
+        assert "call_timeout_s" in message
+        assert "2" in manager.call_tool("slow", "add", {"a": 1, "b": 1})
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_call_under_budget_succeeds():
+    """A call that finishes inside call_timeout_s is unaffected by the budget existing."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("slow2", _extra_cfg(call_timeout_s=10.0), timeout=30.0)
+        assert manager.call_tool("slow2", "sleep_for", {"seconds": 0.5}) == "slept"
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_call_during_reconnect_backoff_names_reconnecting(tmp_path, monkeypatch):
+    """A call issued mid-backoff gets 'is reconnecting' (MCPServerUnavailable), not a timeout —
+    even with a very short call_timeout_s, precedence must not race the reconnect state."""
+    import agent86.tools.mcp_client as mcp_client
+
+    monkeypatch.setattr(mcp_client, "_reconnect_backoff", lambda attempt: 4.0)
+    cfg = _extra_cfg(pid_file=str(tmp_path / "r.pid"), call_timeout_s=0.5)
+    manager = MCPManager({})
+    try:
+        manager.start_server("r", cfg, timeout=30.0)
+        pid = _read_pid(tmp_path / "r.pid")
+        _kill(pid)
+
+        assert _wait_until(lambda: manager._server_state.get("r") == "reconnecting", 20.0)
+
+        t0 = time.monotonic()
+        with pytest.raises(MCPServerUnavailable) as excinfo:
+            manager.call_tool("r", "add", {"a": 1, "b": 1})
+        elapsed = time.monotonic() - t0
+        assert not isinstance(excinfo.value, MCPTimeout)
+        assert "is reconnecting" in str(excinfo.value)
+        assert elapsed < 1.0
+
+        assert _wait_until(lambda: "r" in manager._sessions, 30.0)
+        assert "2" in manager.call_tool("r", "add", {"a": 1, "b": 1})
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_oversized_result_truncates_at_max_result_chars():
+    """SC2: an oversized result is cut at the configured max_result_chars with a visible marker."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("cap", _extra_cfg(max_result_chars=100), timeout=30.0)
+        out = manager.call_tool("cap", "big_text", {"n": 5000})
+        assert out.startswith("x" * 100)
+        assert "…[truncated 4900 chars" in out
+        # The visible body (before the marker line) is exactly the 100-char cut — not the whole
+        # output, which also contains a few 'x's inside "max_result_chars" in the marker text.
+        assert out.split("\n", 1)[0] == "x" * 100
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_default_cap_is_8000():
+    """SC2's default: no max_result_chars configured still caps at 8000 (ADR 0004)."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("cap2", _extra_cfg(), timeout=30.0)
+        out = manager.call_tool("cap2", "big_text", {"n": 9000})
+        assert "…[truncated 1000 chars" in out
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_image_content_block_renders_marker():
+    """SC3: a real ImageContent block renders as a marker, never inlined base64 or a repr."""
+    import base64
+
+    from tests.integration.live_mcp_server import IMAGE_BYTES
+
+    manager = MCPManager({})
+    try:
+        manager.start_server("blocks", _extra_cfg(), timeout=30.0)
+        out = manager.call_tool("blocks", "tiny_image", {})
+        assert out.startswith("[image content: mime_type=image/png base64_len=")
+        assert base64.b64encode(IMAGE_BYTES).decode() not in out
+        assert "ImageContent(" not in out
+        assert "data=" not in out
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_audio_content_block_renders_marker():
+    """SC3, the audio analogue of the image test above."""
+    import base64
+
+    from tests.integration.live_mcp_server import AUDIO_BYTES
+
+    manager = MCPManager({})
+    try:
+        manager.start_server("blocks3", _extra_cfg(), timeout=30.0)
+        out = manager.call_tool("blocks3", "tiny_audio", {})
+        assert out.startswith("[audio content: mime_type=audio/wav base64_len=")
+        assert base64.b64encode(AUDIO_BYTES).decode() not in out
+        assert "AudioContent(" not in out
+        assert "data=" not in out
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_embedded_and_link_blocks_render_markers():
+    """SC3: a real EmbeddedResource (binary) and a real ResourceLink both render as markers,
+    mixed in the same result alongside plain text."""
+    import base64
+
+    manager = MCPManager({})
+    try:
+        manager.start_server("blocks2", _extra_cfg(), timeout=30.0)
+        out = manager.call_tool("blocks2", "mixed_blocks", {})
+        lines = out.splitlines()
+        assert lines[0] == "before"
+        assert (
+            "[embedded resource uri=res://agent86/blob.bin "
+            "mime_type=application/octet-stream base64_len=" in out
+        )
+        assert "— not inlined]" in out
+        assert (
+            "[resource link uri=res://agent86/greeting.txt name=greeting mime_type=text/plain"
+            in out
+        )
+        assert base64.b64encode(b"agent86-embedded-probe").decode() not in out
+        assert "EmbeddedResource(" not in out
     finally:
         manager.close()
