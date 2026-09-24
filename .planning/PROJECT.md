@@ -58,7 +58,18 @@ TUI only showed MCP notes at startup; gap plan 12-08 made them live (TUI transcr
 `/tools` per-server state) and made start failures name the real cause plus the server's stderr.
 1319 tests green.
 
-Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-25).
+**Phase 13 complete (2026-09-24)** — per-server timeouts, the result cap, and non-text content
+(MCP-21, MCP-22, MCP-25). `MCPServerConfig` gained `connect_timeout_s`/`call_timeout_s`/
+`max_result_chars` (30/120/8000, the old hardcodes as defaults); an overrun raises `MCPTimeout`
+naming the server and the key, and a timed-out first connect is cancelled rather than mounting
+tools late. Tool, resource and prompt text truncates at the cap with a visible marker (ADR 0004),
+and image/audio/embedded-resource/resource-link blocks render as named markers via the new
+`tools/mcp_content.py` — `CAP-CONTENT-BLOCKS` is now `implemented`. A live corpus audit found 6 of
+20 calls over 8,000; the default ships, with `mcp-server-git`'s `git_show` the accepted risk. Also
+fixed: mcp 2.0 renamed `isError` to `is_error`, so server errors had lost their `ERROR:` prefix.
+1367 tests green.
+
+Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-20, MCP-24).
 
 **Target features:**
 
@@ -364,6 +375,14 @@ without hand-editing TOML or restarting.
 - ✓ **MCP-23**: **A dropped MCP transport reconnects** — bounded retry with backoff, fresh
   `list_tools()`/capabilities on reconnect — Validated in Phase 12: Fix the zombie-tool desync and
   add reconnect
+- ✓ **MCP-21**: **Per-server MCP timeouts** — `connect_timeout_s`/`call_timeout_s` replace the
+  hardcoded 30 s/120 s — Validated in Phase 13: Per-server timeouts, the result cap, and non-text
+  content
+- ✓ **MCP-22**: **A visible prompt-side result cap** — `max_result_chars` (default 8,000, ADR
+  0004) on tool, resource and prompt text — Validated in Phase 13: Per-server timeouts, the result
+  cap, and non-text content
+- ✓ **MCP-25**: **Non-text content blocks rendered, never repr'd** — named markers, no base64 in
+  the prompt — Validated in Phase 13: Per-server timeouts, the result cap, and non-text content
 
 ### Active
 
@@ -514,4 +533,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 — Phase 12 (Fix the zombie-tool desync and add reconnect) complete.*
+*Last updated: 2026-09-24 — Phase 13 (Per-server timeouts, the result cap, and non-text content) complete.*
