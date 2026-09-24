@@ -6,8 +6,12 @@ build_mcp degradation paths — the previously thin `tools/mcp_client.py`.
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -261,5 +265,88 @@ def test_complete_returns_argument_suggestions():
 
         filtered, _ = manager.complete("alpha", "prompt", "review_code", "style", "s")
         assert filtered.splitlines() == ["security-focused"]
+    finally:
+        manager.close()
+
+
+# --- Plan 12-05: real-stdio kill-mid-session test (MCP-26 SC1 + SC2, the research's own probe) - #
+
+
+def _pid_cfg(pid_file: Path) -> MCPServerConfig:
+    return MCPServerConfig(
+        command=sys.executable,
+        args=[str(_SERVER), "stdio", "0"],
+        env={"AGENT86_LIVE_MCP_PID_FILE": str(pid_file)},
+    )
+
+
+def _read_pid(pid_file: Path, timeout: float = 10.0) -> int:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if pid_file.exists():
+            text = pid_file.read_text(encoding="utf-8").strip()
+            if text:
+                return int(text)
+        time.sleep(0.05)
+    raise AssertionError(f"{pid_file} never received a pid within {timeout}s")
+
+
+def _kill(pid: int) -> None:
+    # On Windows, signal.SIGTERM maps to TerminateProcess (a hard kill, the research's own
+    # `Stop-Process -Force` equivalent); on POSIX, prefer the real SIGKILL when available.
+    sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+    with contextlib.suppress(ProcessLookupError):
+        os.kill(pid, sig)
+
+
+def _wait_until(predicate, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(0.05)
+    return predicate()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_mid_session_kill_unregisters_tools_and_names_server(tmp_path, monkeypatch):
+    """The research's own empirical repro, pinned as a CI test (MCP-26 SC1 + SC2).
+
+    `_MAX_RECONNECT_ATTEMPTS` is monkeypatched to 0 so this test asserts the same "dead and
+    gone" outcome regardless of whether plan 12-03's reconnect loop has landed yet — the
+    reconnect-after-real-kill case is plan 12-06.
+    """
+    import agent86.tools.mcp_client as mcp_client
+
+    monkeypatch.setattr(mcp_client, "_MAX_RECONNECT_ATTEMPTS", 0)
+
+    manager = MCPManager({})
+    try:
+        alpha_tools = manager.start_server("alpha", _pid_cfg(tmp_path / "alpha.pid"), timeout=30.0)
+        manager.start_server("beta", _stdio_cfg(), timeout=30.0)
+
+        pid = _read_pid(tmp_path / "alpha.pid")
+        _kill(pid)
+
+        assert _wait_until(
+            lambda: manager.tools_for("alpha") == [] and manager._tasks["alpha"].done(),
+            20.0,
+        )
+        assert "alpha" not in manager._sessions
+        assert not any(t.name.startswith("mcp__alpha__") for t in manager.tools())
+
+        with pytest.raises(RuntimeError) as excinfo:
+            manager.call_tool("alpha", "add", {"a": 1, "b": 1})
+        assert "'alpha'" in str(excinfo.value)
+
+        add_tool = next(t for t in alpha_tools if isinstance(t, MCPTool) and t._tool == "add")
+        call = ToolCall(id="1", name=add_tool.name, arguments={"a": 1, "b": 1})
+        res = add_tool.run(call, ctx=None)
+        assert res.ok is False
+        assert "'alpha'" in (res.error or "")
+
+        assert "2" in manager.call_tool("beta", "add", {"a": 1, "b": 1})
+
+        assert any("MCP server 'alpha' disconnected" in note for note in manager.notes)
     finally:
         manager.close()
