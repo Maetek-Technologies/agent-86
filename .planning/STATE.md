@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T12:48:59.357Z"
-last_activity: 2026-09-24 -- Phase 11 execution started
+last_updated: "2026-09-24T12:55:48.780Z"
+last_activity: 2026-09-24
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 9
-  completed_plans: 5
+  completed_plans: 6
 ---
 
 # Project State
@@ -67,7 +67,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
-| 11 — Resources and Prompts First-Class | ○ | 0/0 | 0% |
+| 11 — Resources and Prompts First-Class | ◐ | 1/4 | 25% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -77,6 +77,32 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 11-01 complete (Wave 0 test machinery — live MCP fixture + fake-capabilities
+  session, wave 1, both named Wave 0 gaps closed):** `tests/integration/live_mcp_server.py` gained
+  three resources (`res://agent86/greeting.txt` text, `res://agent86/blob.bin` binary,
+  `res://agent86/echo/{word}` template), a two-argument `review_code` prompt, and a
+  `complete_argument` completion handler offering `STYLE_COMPLETIONS` for `style` — CI can now
+  exercise `resources/list`, `resources/read`, `resources/templates/list`, `prompts/list`,
+  `prompts/get` and `completion/complete` with no network and no `npx`, alongside the three
+  existing tools (both committed exact-tool-name-set assertions in `test_mcp_client.py` and
+  `test_mcp_live.py` still pass unmodified). Capabilities verified live against the exact fixture
+  code (not re-quoted from planning): `resources={subscribe: False, list_changed: False}`,
+  `prompts={list_changed: False}`, `completions={}` — `subscribe` stays `False` and cannot be
+  raised through `MCPServer`, so `tests/unit/test_mcp.py` gained `_FakeCaps`/
+  `_FakeResourcesCap`/`_FakePromptsCap`/`_FakeCompletionsCap` duck-typed capability stand-ins,
+  `_fake_result()`, and an `_install_fake_transport` extended with keyword-only
+  `capabilities=`/`responses=`/`calls=` params (all defaulted, every pre-existing call site
+  byte-unchanged) so a unit test can declare `resources.subscribe = True` and drive the
+  subscribe/unsubscribe call sites the live fixture provably cannot reach. One documented,
+  non-blocking deviation: the plan's acceptance criterion expecting >=6 exact-pattern
+  `_install_fake_transport(monkeypatch, [` call sites was a planning-time miscount — the file has
+  4 total call sites (3 single-line, 1 multi-line), now 4 single-line matches after this plan's
+  one new regression test; no call site was reformatted or fabricated to chase the number, and the
+  substantive requirement (every pre-existing call site unchanged) holds. `11-VALIDATION.md` now
+  records `wave_0_complete: true` (`nyquist_compliant` stays `false` for plan 11-04). Full suite
+  green: 1250 passed (up from 1249), 0 failed; `ruff check .` clean; `git status --porcelain src/`
+  empty throughout — this plan, like Phase 10, shipped no production code by design.
 
 - 2026-09-23 — **Plan 10-05 complete (workstream A/B/C phase breakdown + phase gate, wave 4 —
   final plan, Phase 10 now 5/5 complete, MCP-13 closed):** `docs/mcp-conformance-audit-2026-09.md`
@@ -942,9 +968,9 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 11 (resources-and-prompts-become-first-class) — EXECUTING
-Plan: 1 of 4
-Status: Executing Phase 11
-Last activity: 2026-09-24 -- Phase 11 execution started
+Plan: 2 of 4
+Status: Ready to execute
+Last activity: 2026-09-24
 
 ## Next Step
 
