@@ -264,11 +264,14 @@ agent86 defect, and is not this milestone's to fix.
 2026-09-24): workstream C's lead phase, MCP-26 and MCP-23. Dead servers' tools leave the registry,
 the model gets a named-server error, and a dropped transport reconnects with bounded backoff.
 
-**Phase 13 — Per-server timeouts, the result cap, and non-text content — is next** (added
-2026-09-24, not yet planned): workstream C's second phase, MCP-21, MCP-22 and MCP-25. Promoted
-ahead of schema deferral/notifications because all three of its items are confirmed audit
-head-start rows with the governing ruling (ADR 0004) already written, and a base64 blob or an
-unbounded result reaching the prompt is a live cost problem today.
+**Phase 13 — Per-server timeouts, the result cap, and non-text content — is complete** (6/6
+plans, 2026-09-24): workstream C's second phase, MCP-21, MCP-22 and MCP-25. `MCPServerConfig`
+carries per-server `connect_timeout_s`/`call_timeout_s`/`max_result_chars` (30/120/8000); tool,
+resource and prompt results truncate visibly at the cap; image/audio/embedded-resource/resource-link
+blocks render as named markers, and `CAP-CONTENT-BLOCKS` is now `implemented`. A live corpus audit
+(`13-EVIDENCE.md`) found 6 of 20 calls over 8,000 — the default ships per ADR 0004, with
+`mcp-server-git`'s `git_show` recorded as the accepted risk (no narrowing argument; raise the
+per-server cap). Also fixed: mcp 2.0's `is_error` rename had silently dropped the `ERROR:` prefix.
 
 Phases 14+ remain **unwritten by design** and are promoted one at a time from the audit's
 recommended breakdown via `/gsd:add-phase`: schema deferral/notification handling (C), and OAuth discovery/authorization and token refresh against
@@ -323,7 +326,7 @@ head start — start there, not from the spec.
 `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Promoted so far:
 **Phase 11** (999.0b, workstream A — MCP-14/MCP-15, complete 2026-09-24) and **Phase 12**
 (999.0d, workstream C — MCP-26/MCP-23, complete 2026-09-24) and **Phase 13** (999.0d, workstream
-C — MCP-21/MCP-22/MCP-25, added 2026-09-24). The rest are promoted one at a time.
+C — MCP-21/MCP-22/MCP-25, complete 2026-09-24). The rest are promoted one at a time.
 **Goal:** The three workstreams themselves.
 **Requirements:** MCP-16…MCP-26, per the audit's breakdown.
 **Plans:** 0 plans
