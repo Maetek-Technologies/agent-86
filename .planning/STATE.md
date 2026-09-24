@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: executing
-last_updated: "2026-09-24T15:49:32.798Z"
+status: verifying
+last_updated: "2026-09-24T17:11:41.272Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 3
   completed_phases: 2
-  total_plans: 16
-  completed_plans: 15
+  total_plans: 17
+  completed_plans: 16
 ---
 
 # Project State
@@ -77,6 +77,37 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 12-08 complete (gap closure — live MCP notes and readable start failures,
+  wave 4, MCP-26 and MCP-23 re-confirmed closed):** Gap closure from 12-07 Task 3's human
+  verification, which found the reconnect machinery worked but was invisible: `MCPManager`
+  appended drop/reconnect notes to `manager.notes`, rendered by the TUI only once at mount, and
+  a stdio start failure rendered as the SDK's bare `unhandled errors in a TaskGroup (1
+  sub-exception)` with the real cause (the child's stderr) going to the terminal, invisible
+  under the TUI. `MCPManager` gained a push-hook note API — `add_note_listener`, a bounded
+  (500-event) sequenced log via `notes_since(seq)` that deliberately does NOT dedup (a repeat
+  outage is real news), and `server_status()`/`server_statuses()` as the public non-connected-
+  state accessor. `Harness.on_mcp_note` + `_wire_mcp`'s new `add_note_listener` call relay every
+  note to whichever interactive surface is listening; the TUI marshals with
+  `App.post_message(McpNote(text))` — not `call_from_thread`, which would deadlock against
+  `stop_server()` blocking the UI thread on the MCP loop — rendering `mcp: <text>` live in the
+  transcript even while idle. `/tools` now names every non-connected server with its state, and
+  `--plain` drains new notes via `_Repl.pending_mcp_notes()` before each prompt. Separately, a
+  new `describe_start_failure()` unwraps nested `BaseExceptionGroup`s to every distinct leaf and
+  a new `_StderrCapture` writes a stdio child's stderr to a per-connection temp file (threaded
+  through a `ContextVar` so ~7 existing test fakes' `_open_transport` signature stays untouched)
+  — a start failure's note now names the real cause plus the child's own stderr tail with a
+  named fix, never the bare TaskGroup wrapper; `MCPTestModal` reuses the same function. One
+  found-and-fixed deviation: the new stderr-capture I/O (real, GIL-releasing file syscalls in
+  `_serve_once`'s `finally`) exposed a genuine, narrow pre-existing race between popping
+  `_sessions`/`_server_tools` and `_serve`'s later `_on_drop()` setting `_server_state` —
+  `test_named_server_error_after_death` (unmodified, pre-existing) went intermittently red
+  (~15-20% of runs); fixed at the root by setting `_server_state`/`_disconnect_cause`
+  synchronously, atomically with the two pops, inside `_serve_once`'s own `finally`. 20/20 clean
+  reruns of the previously-flaky test after the fix. Full suite green across 2 consecutive runs:
+  **1319 passed** (up from 1300), 0 failed; `mypy src/agent86` and `ruff check .` both clean.
+  Suggested CHANGELOG line left in `12-08-SUMMARY.md` for 12-07 (paused at its own human
+  checkpoint, owns CHANGELOG.md) to fold in when it resumes.
 
 - 2026-09-24 — **Plan 12-06 complete (real reconnect + remote-transport kill-detection evidence,
   wave 3, MCP-23 and MCP-26 both closed):** `tests/integration/test_mcp_client.py` gained
@@ -1096,8 +1127,9 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 12 (Fix the zombie-tool desync and add reconnect) — EXECUTING
-Plan: 7 of 7
-Status: Ready to execute
+Plan: 8 of 8 (12-08, gap closure, complete; 12-07 still paused at its own Task 3 human
+checkpoint, now unblocked to resume)
+Status: 7/8 plans have summaries — awaiting 12-07's manual TUI re-check before phase verification
 planned; phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
