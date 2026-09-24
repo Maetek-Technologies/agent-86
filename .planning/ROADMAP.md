@@ -228,7 +228,7 @@ Plans:
   (wave 1, MCP-21, MCP-22)
 - [x] 13-03-PLAN.md — pure `render_content_block` + `truncate_result` in new
   `tools/mcp_content.py` (wave 1, TDD, MCP-22, MCP-25)
-- [ ] 13-04-PLAN.md — wire the cap and renderer into `_content_to_text`, `read_resource`,
+- [x] 13-04-PLAN.md — wire the cap and renderer into `_content_to_text`, `read_resource`,
   `get_prompt`; `is_error` prefix fix (wave 2, MCP-22, MCP-25)
 - [ ] 13-05-PLAN.md — real-stdio fixture tools (opt-in) + integration tests for all three SCs
   (wave 3, MCP-21, MCP-22, MCP-25)
@@ -315,7 +315,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 3/6 plans executed
+**Plans:** 4/6 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 

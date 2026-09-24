@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T18:21:18.695Z"
+last_updated: "2026-09-24T18:28:29.739Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 4
   completed_phases: 3
   total_plans: 23
-  completed_plans: 20
+  completed_plans: 21
 ---
 
 # Project State
@@ -78,6 +78,37 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 13-04 complete (wire the result cap and non-text content rendering into
+  the MCP client, wave 2, MCP-22 and MCP-25 both closed):** `_content_to_text` was rewritten to
+  render every `tools/call` content block through plan 13-03's `render_content_block` instead of
+  `str(chunk)`'s Python repr, then cap the joined body at the server's `max_result_chars`
+  (default 8,000, ADR 0004) via `truncate_result`, with the `ERROR: ` prefix applied last so a
+  truncated error result still reads `ERROR: <capped body>...[truncated N chars ...]`. `call_tool`
+  now computes `limit = self._max_result_chars_for(server)` on the caller's thread before
+  scheduling the coroutine (matching the existing `_call_timeout_for` pattern) and passes it
+  through; `read_resource` and `get_prompt` each gained the same per-server cap immediately after
+  their existing Phase-11 `_resource_contents_to_text`/`_prompt_messages_to_text` call, leaving
+  those functions' own marker wording and metadata untouched — a ruling on 13-04's own research
+  Open Question 1: the cap extends beyond `call_tool` (ADR 0004's named site) to resource reads
+  and prompt renders, because both feed the same context budget and ADR 0004 gives no reason
+  against it; `list_resources`/`list_prompts`/`list_resource_templates`/`complete` stay uncapped
+  (bounded by list length, outside ADR 0004's reach). A discovered defect, found while rewriting
+  the function that carried it: mcp 2.0's `CallToolResult` field is `is_error`, not the
+  pre-existing code's `isError`, so a real 2.0 server error had silently lost its `ERROR: ` prefix
+  — `_content_to_text` now reads `is_error` first, falling back to `isError` for older SDKs.
+  Fourteen new tests through the real fake-transport `call_tool`/`read_resource`/`get_prompt`
+  paths, built against real `mcp.types` SDK objects, pin the cap, the error-prefix fix, and every
+  non-text block's exact marker (image/audio/embedded-resource/resource-link/unknown). One
+  documented, non-blocking deviation: the plan's own GREEN docstring text and its `grep -c
+  "str(chunk)" == 0` acceptance criterion contradicted each other (the docstring text specified in
+  the plan literally contained the substring `str(chunk)`); reworded to "the raw chunk's Python
+  repr" to satisfy both. Full suite green: `pytest tests/unit/ -q` 810 passed (up from ~796; one
+  pre-existing Phase-12 timing-sensitive test flaked once in a full run and passed on rerun,
+  unrelated to this plan's files); `pytest tests/unit/test_mcp.py tests/unit/test_mcp_content.py
+  -q` 117 passed; `pytest tests/integration/test_mcp_client.py
+  tests/integration/test_scripting_contract.py -q` 36 passed; `mypy src/agent86` and `ruff check .`
+  both clean.
 
 - 2026-09-24 — **Plan 12-07 complete (phase signoff — docs, validation sign-off, and
   human-verified reconnect, wave 4 — final plan, Phase 12 now 8/8 complete, MCP-26 and MCP-23
@@ -1165,7 +1196,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 13 (Per-server timeouts, the result cap, and non-text content) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 phases 14+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
