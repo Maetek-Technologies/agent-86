@@ -35,8 +35,18 @@ end-to-end by a network-free CI test, and a docs-consistency test keeps the matr
 ADRs from drifting apart. Nothing under `src/` changed: the audit was audit-only by design, and the
 confirmed `_serve`/`_server_tools` zombie-tool desync was recorded and routed to MCP-26, not fixed.
 
-Next: `/gsd:add-phase` once per proposed phase — `docs/BACKLOG.md` § 999.0's precondition for
-writing phases 999.0b–d is now satisfied.
+**Phase 11 complete (2026-09-24)** — resources and prompts are first-class (MCP-14, MCP-15).
+`MCPManager` gained `resources/list`, `resources/read`, `resources/templates/list`,
+`resources/(un)subscribe`, `prompts/list`, `prompts/get` and `completion/complete` call sites,
+surfaced to the model as eight capability-gated per-server synthetic tools that mount only when
+the server advertises the capability. The conformance matrix re-rules five rows (four
+`implemented`, `CAP-RESOURCE-SUBSCRIBE` `partial` pending MCP-24) and §15 dropped the matching
+non-goals. Live evidence (`11-EVIDENCE.md`): `server-everything` prompts and completion work
+end-to-end; the pinned `server-filesystem@2026.8.31` turned out to declare no resources
+capability at all, so resources are proven via the CI fixture's real stdio round trip instead.
+1264 tests green.
+
+Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-26).
 
 **Target features:**
 
@@ -330,6 +340,12 @@ without hand-editing TOML or restarting.
   `beautifulsoup4`, PyYAML), each hiding the parent package *and* any already-imported submodule,
   building a real `Harness` around a fake provider and running a turn: the feature degrades, the
   harness says so in one line, and the turn goes through — Phase 9
+- ✓ **MCP-14**: **MCP resources are first-class** — list, read, templates and (un)subscribe as
+  capability-gated per-server tools; a blob is described, never inlined — Validated in Phase 11:
+  Resources and prompts become first-class
+- ✓ **MCP-15**: **MCP prompts and argument completion are first-class** — `prompts/list`,
+  `prompts/get` and `completion/complete` as capability-gated per-server tools, `ref_type`
+  validated before any wire call — Validated in Phase 11: Resources and prompts become first-class
 
 ### Active
 
@@ -480,4 +496,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-23 — Phase 10 (MCP Conformance Audit) complete; the matrix is ruled.*
+*Last updated: 2026-09-24 — Phase 11 (Resources and prompts become first-class) complete.*
