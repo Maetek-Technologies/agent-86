@@ -7,7 +7,7 @@
 - **v0.8 Context & Cost** — Phase 7 — shipped 2026-09-19
 - **v0.9 Coding-Agent UX** — Phase 8 — shipped 2026-09-21
 - **v1.0 Release** — Phase 9 — shipped 2026-09-21, published to PyPI
-- **v1.1 MCP Integration Depth** — Phases 10-12 — in progress (started 2026-09-22)
+- **v1.1 MCP Integration Depth** — Phases 10-13 — in progress (started 2026-09-22)
 
 Full detail for v0.6-v1.0: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) ·
 requirements: [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) ·
@@ -58,6 +58,9 @@ implementation phases are now written from its recommended breakdown
 - [x] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies (completed 2026-09-24)
   mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
   closing MCP-26 and MCP-23
+- [ ] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C:
+  configurable connect/call timeouts, ADR 0004's visible result cap, and real rendering of
+  image/audio/embedded-resource blocks, closing MCP-21, MCP-22 and MCP-25
 
 ## Phase Details
 
@@ -183,6 +186,39 @@ Plans:
   server state, plain-loop drain; start-failure note unwraps ExceptionGroups and quotes the stdio
   child's stderr tail (wave 4, MCP-26, MCP-23)
 
+#### Phase 13: Per-server timeouts, the result cap, and non-text content
+**Workstream**: C
+**Goal**: A slow-but-legitimate server and a hung one are distinguishable by config, an oversized
+tool result truncates visibly instead of consuming the budget silently, and an image/audio/resource
+content block renders as something other than a Python repr.
+**Depends on**: Phase 12 (the `_serve` lifecycle and reconnect path it repaired; timeouts must
+compose with its bounded backoff rather than race it)
+**Requirements**: MCP-21, MCP-22, MCP-25
+**Matrix rows closed**: `CAP-CONTENT-BLOCKS` (`absent`/`partial` → `implemented`)
+**Success Criteria** (what must be TRUE):
+  1. `MCPServerConfig` gains per-server `connect_timeout_s`/`call_timeout_s` fields, replacing the
+     hardcoded 30 s in `start_server` and 120 s in `call_tool` / the capability-tool call path
+     (`mcp_client.py:808,1147,1157` as of Phase 12), with the old values as defaults so no existing
+     config changes behavior.
+  2. `_content_to_text` truncates a joined result at `MCPServerConfig.max_result_chars` (default
+     8,000, per ADR 0004) with a visible truncation marker — never drops silently, never raises.
+  3. An `ImageContent`/`AudioContent`/`EmbeddedResource` block renders as a real representation
+     rather than `str(chunk)`'s Python repr (`mcp_client.py:1442`) — the same no-repr rule Phase
+     11's `_prompt_messages_to_text` already follows, so no base64 blob reaches the prompt verbatim.
+**Sizing signal**: three independently-confirmed audit head-start rows land here — row 4
+(timeouts), row 5 (result cap), row 6 (content blocks) — and the ADR 0004 ruling this phase
+implements is already written, so it applies a decision rather than re-deriving one.
+**Risk / constraint**: `MCPServerConfig` schema growth must stay read-only in `config.py`;
+any `/config mcp` write-back of the new fields goes through `config_writer.py` (CLAUDE.md's
+read-only rule). The default 8,000-char cap must not silently break an existing server whose
+legitimate results already exceed it — the first plan audits the pinned corpus for that before
+shipping the default. No new core dependency; cold-start unaffected; `run --json` keys
+additive-only.
+**Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown" → Proposed Phase 16 (renumbered 13 on promotion); ruling in
+[../docs/adr/0004-mcp-result-cap-location.md](../docs/adr/0004-mcp-result-cap-location.md)
+**Plans**: 0 plans (not yet planned — run `/gsd:plan-phase 13`)
+
 ## Next
 
 **Phase 10 — MCP Conformance Audit — is complete** (5/5 plans, 2026-09-23). The conformance
@@ -208,14 +244,18 @@ the CI fixture's own real stdio round trip (plan 11-02), which does exercise a g
 `resources` capability end to end. This is a fact about the current third-party package, not an
 agent86 defect, and is not this milestone's to fix.
 
-**Phase 12 — Fix the zombie-tool desync and add reconnect — is next** (added 2026-09-24, not yet
-planned): workstream C's lead phase, MCP-26 and MCP-23. Chosen ahead of the rest because it is the
-only item in the breakdown that fixes a confirmed defect rather than adding surface, and the later
-workstream-C phases build on the `_serve` lifecycle it repairs.
+**Phase 12 — Fix the zombie-tool desync and add reconnect — is complete** (8/8 plans,
+2026-09-24): workstream C's lead phase, MCP-26 and MCP-23. Dead servers' tools leave the registry,
+the model gets a named-server error, and a dropped transport reconnects with bounded backoff.
 
-Phases 13+ remain **unwritten by design** and are promoted one at a time from the audit's
-recommended breakdown via `/gsd:add-phase`: timeouts/result cap/non-text content and schema
-deferral/notification handling (C), and OAuth discovery/authorization and token refresh against
+**Phase 13 — Per-server timeouts, the result cap, and non-text content — is next** (added
+2026-09-24, not yet planned): workstream C's second phase, MCP-21, MCP-22 and MCP-25. Promoted
+ahead of schema deferral/notifications because all three of its items are confirmed audit
+head-start rows with the governing ruling (ADR 0004) already written, and a base64 blob or an
+unbounded result reaching the prompt is a live cost problem today.
+
+Phases 14+ remain **unwritten by design** and are promoted one at a time from the audit's
+recommended breakdown via `/gsd:add-phase`: schema deferral/notification handling (C), and OAuth discovery/authorization and token refresh against
 GitHub's hosted server (B). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
 rules all three `out` under the BACKLOG's "the ceiling is demand" rule until a realistic corpus
 server needs them (ADRs 0001/0002). Sizing, corrected by the audit: **C is larger than A on
@@ -266,7 +306,8 @@ head start — start there, not from the spec.
 **Status:** Unblocked 2026-09-23 when Phase 10's matrix was ruled; sized and sequenced in
 `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Promoted so far:
 **Phase 11** (999.0b, workstream A — MCP-14/MCP-15, complete 2026-09-24) and **Phase 12**
-(999.0d, workstream C — MCP-26/MCP-23, added 2026-09-24). The rest are promoted one at a time.
+(999.0d, workstream C — MCP-26/MCP-23, complete 2026-09-24) and **Phase 13** (999.0d, workstream
+C — MCP-21/MCP-22/MCP-25, added 2026-09-24). The rest are promoted one at a time.
 **Goal:** The three workstreams themselves.
 **Requirements:** MCP-16…MCP-26, per the audit's breakdown.
 **Plans:** 0 plans

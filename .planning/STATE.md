@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: 8/8 plans have summaries — phase gate green (`pytest -q` 1319 passed, `mypy`/`ruff`
+status: Phase 13 added, not yet planned
 last_updated: "2026-09-24T17:39:16.215Z"
 last_activity: 2026-09-24
 progress:
-  total_phases: 3
+  total_phases: 4
   completed_phases: 3
   total_plans: 17
   completed_plans: 17
@@ -23,7 +23,7 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 12 — Fix the zombie-tool desync and add reconnect
+**Current focus:** Phase 13 — Per-server timeouts, the result cap, and non-text content
 close.
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
@@ -1155,14 +1155,19 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   workstream-C phases depend on the `_serve` lifecycle it fixes; MCP-16 (sampling/elicitation/
   roots) stays behind under the BACKLOG's demand-ceiling rule.
 
+- Phase 13 added: Per-server timeouts, the result cap, and non-text content — workstream C
+  (MCP-21, MCP-22, MCP-25), promoted 2026-09-24 from the same breakdown (Proposed Phase 16,
+  renumbered on promotion) once Phase 12's `_serve` lifecycle fix landed. Chosen ahead of schema
+  deferral/notifications (Proposed Phase 17) because all three items are confirmed head-start rows
+  and ADR 0004 already rules the cap. Audit line refs re-pinned to post-Phase-12 `mcp_client.py`
+  (timeouts at :808/:1147/:1157, `str(chunk)` fallback at :1442).
+
 ## Current Position
 
-Phase: 12
+Phase: 13
 Plan: Not started
-12-08 closed the gap, approved, and is now complete)
-Status: 8/8 plans have summaries — phase gate green (`pytest -q` 1319 passed, `mypy`/`ruff`
-clean), `12-VALIDATION.md` signed off (`nyquist_compliant: true`), ready for phase verification;
-phases 13+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
+Status: Milestone v1.1 at 3/4 phases complete (Phases 10-12); Phase 13 added, not yet planned;
+phases 14+ remain unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
 ## Next Step
