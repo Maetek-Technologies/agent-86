@@ -55,7 +55,8 @@ implementation phases are now written from its recommended breakdown
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
   — **4 plans**, 4 waves
-- [x] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies (completed 2026-09-24)
+- [x] **Phase 12: Fix the zombie-tool desync and add reconnect** - Workstream C: a server that dies
+ (completed 2026-09-24)
   mid-session has its tools unregistered, and a dropped transport reconnects with bounded backoff,
   closing MCP-26 and MCP-23
 - [ ] **Phase 13: Per-server timeouts, the result cap, and non-text content** - Workstream C:
@@ -217,7 +218,22 @@ additive-only.
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 16 (renumbered 13 on promotion); ruling in
 [../docs/adr/0004-mcp-result-cap-location.md](../docs/adr/0004-mcp-result-cap-location.md)
-**Plans**: 0 plans (not yet planned — run `/gsd:plan-phase 13`)
+**Plans**: 6 plans in 4 waves
+
+Plans:
+- [ ] 13-01-PLAN.md — live pinned-corpus result-size audit + MCP-25 before-evidence →
+  `13-EVIDENCE.md`, with the written ruling on the 8,000 default (wave 1, MCP-22, MCP-25)
+- [ ] 13-02-PLAN.md — `MCPServerConfig.connect_timeout_s`/`call_timeout_s`/`max_result_chars`;
+  per-server timeouts at `start_server`/`call_tool`/`_on_session`, overruns named and cancelled
+  (wave 1, MCP-21, MCP-22)
+- [ ] 13-03-PLAN.md — pure `render_content_block` + `truncate_result` in new
+  `tools/mcp_content.py` (wave 1, TDD, MCP-22, MCP-25)
+- [ ] 13-04-PLAN.md — wire the cap and renderer into `_content_to_text`, `read_resource`,
+  `get_prompt`; `is_error` prefix fix (wave 2, MCP-22, MCP-25)
+- [ ] 13-05-PLAN.md — real-stdio fixture tools (opt-in) + integration tests for all three SCs
+  (wave 3, MCP-21, MCP-22, MCP-25)
+- [ ] 13-06-PLAN.md — after-evidence, docs, `CAP-CONTENT-BLOCKS` → implemented, VALIDATION
+  sign-off, phase gate (wave 4)
 
 ## Next
 
