@@ -47,10 +47,17 @@ created: 2026-09-24
 | 12-02-02 | 12-02 | 1 | registry thread-safety (identity-checked removal, cross-thread mutation) | unit | `pytest tests/unit/test_registry.py -q -k "unregister_tool or concurrent"` | ✅ | ✅ (4 passed) |
 | 12-04-02 | 12-04 | 2 | harness registry sync (MCP-26 unregister / MCP-23 re-add on reconnect) | unit | `pytest tests/unit/test_loop.py -q -k mcp_tools_changed` | ✅ | ✅ (6 passed) |
 | 12-06-02 | 12-06 | 3 | MCP-26 (SC1) HTTP/SSE death detection, research OQ4 | integration (real SSE/streamable-HTTP kill) | `pytest tests/integration/test_mcp_live.py -q -k mid_session` | ✅ | ✅ (2 passed — no accepted risk needed; SSE detected passively, HTTP detected on next call) |
+| 12-08-01+02 | 12-08 | 4 | gap closure: live MCP notes (push-hook listener + server-status accessor) | unit | `pytest tests/unit/test_mcp.py -q -k "note_listener or repeated_outages or server_status_formats"` | ✅ | ✅ (5 passed) |
+| 12-08-01+02 | 12-08 | 4 | gap closure: readable start failures (ExceptionGroup unwrap + stderr capture) | unit | `pytest tests/unit/test_mcp.py -q -k "describe_start_failure or stderr_capture or start_note_has_no_taskgroup"` | ✅ | ✅ (6 passed) |
+| 12-08-01+02 | 12-08 | 4 | gap closure: stdio start-failure note carries the real child stderr | integration (real stdio) | `pytest tests/integration/test_mcp_client.py -q -k stdio_start_failure_note_carries_child_stderr` | ✅ | ✅ (1 passed) |
+| 12-08-03 | 12-08 | 4 | gap closure: TUI live note delivery (cross-thread `post_message`, listener detach on unmount) | TUI | `pytest tests/tui/test_mcp_notes.py -q` | ✅ | ✅ (2 passed) |
+| 12-08-03 | 12-08 | 4 | gap closure: `/tools` non-connected state + `--plain` pre-prompt note drain | integration | `pytest tests/integration/test_mcp_note_surfaces.py -q` | ✅ | ✅ (5 passed) |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
 Full suite `pytest -q`: 1300 passed, 14 deselected, 0 failed. `mypy src/agent86`: clean. `ruff check .`: clean. `pytest tests/integration/test_mcp_client.py tests/integration/test_mcp_live.py -q`: 20 passed.
+
+Plan 12-08 (gap closure, landed after this sign-off's original run) added 19 tests across the five rows above; its own recorded full-suite result: `pytest -q` 1319 passed (up from 1300), 0 failed, across 2 consecutive runs; `mypy src/agent86` and `ruff check .` both clean (12-08-SUMMARY.md).
 
 ---
 

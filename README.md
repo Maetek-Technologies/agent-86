@@ -611,7 +611,10 @@ gate is what stops side effects.
 stream ends, not on the next call that happens to fail; every subsequent error names the server.
 The manager then retries the dropped transport up to 5 times with exponential backoff and jitter
 (capped at 30s) before giving up, re-listing the server's tools on a successful reconnect and
-reporting every attempt in `/tools`'s MCP notes.
+reporting every attempt in `/tools`'s MCP notes. Those notes reach the TUI transcript and
+`--plain` live — even while the app sits idle between turns — not only at startup, and `/tools`
+names every non-connected server's state; a stdio server's start failure names the real cause
+plus its own captured stderr tail instead of a bare "unhandled errors in a TaskGroup".
 
 ## Security model
 

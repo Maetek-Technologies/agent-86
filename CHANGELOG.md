@@ -28,6 +28,16 @@ All notable changes to agent86 are documented here. The format follows
   MCP-21); `${VAR}` secrets are resolved once at server start, not re-resolved on each reconnect
   attempt. A deliberate `stop_server()`/`close()` — even one issued mid-backoff — is never
   mistaken for a drop worth retrying. Closes MCP-23.
+- **MCP disconnect/reconnect notes now appear live, not only at startup.** The TUI transcript
+  and `--plain` both surface a disconnect/reconnecting/reconnected note the moment it happens —
+  even while the app is otherwise idle between turns — instead of only rendering the notes that
+  existed when the session started. `/tools` lists every non-connected MCP server with its state
+  (`disconnected: <cause>` / `reconnecting (attempt N of M): <cause>`), and a stdio server's
+  start failure now names the real cause plus its own stderr tail instead of a bare "unhandled
+  errors in a TaskGroup". A stdio child's stderr is now captured to a per-connection temp file
+  rather than inherited straight to the terminal, so it can be read back into that failure note
+  — a behaviour change for anyone who previously watched a stdio MCP server's own stderr scroll
+  past in the console.
 
 ### Changed
 

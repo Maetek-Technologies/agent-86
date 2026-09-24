@@ -487,7 +487,10 @@ number v0.7 existed to remove.
    watches for end-of-stream, not a failed call; `message_handler` is installed but server
    notifications are still dropped (MCP-24) — and every error afterward names the server. A
    dropped transport is retried up to 5 times with exponential backoff before the server is
-   reported disconnected.
+   reported disconnected. A disconnect/reconnect note reaches the TUI transcript and `--plain`
+   live via a push-hook listener — not only at startup — and `/tools` names every non-connected
+   server's state; a stdio server's start failure names the real cause plus the child's own
+   captured stderr instead of the SDK's bare "unhandled errors in a TaskGroup".
 3. **Skills** — self-contained folders discovered from skill paths:
 
 ```
