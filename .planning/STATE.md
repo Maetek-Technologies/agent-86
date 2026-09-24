@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: executing
-last_updated: "2026-09-24T13:19:48.860Z"
+status: verifying
+last_updated: "2026-09-24T13:34:01.667Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 2
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 9
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Project State
@@ -77,6 +77,37 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 11-04 complete (phase signoff — live evidence and conformance re-ruling,
+  wave 4 — final plan, Phase 11 now 4/4 complete, MCP-14/MCP-15 both closed):** Two scratchpad
+  scripts drove `agent86.tools.mcp_client.MCPManager` against the pinned `@2026.8.31`
+  `server-filesystem` and `server-everything` packages (re-verified via `npm view` unchanged from
+  Phase 10's D-11 pin), recorded verbatim in the new
+  `phases/11-resources-and-prompts-become-first-class/11-EVIDENCE.md`. **SC2 met:**
+  `server-everything` returned 4 real prompts (`simple-prompt`, `args-prompt`,
+  `completable-prompt`, `resource-prompt` — one more than the roadmap's own text anticipated), and
+  `complete()` returned real suggestions for `completable-prompt`'s `department` argument
+  (`Engineering`/`Sales`/`Marketing`/`Support`), closing 11-RESEARCH.md Open Question 2. **SC1 not
+  met as literally worded:** the pinned `server-filesystem@2026.8.31` declares no `resources`
+  capability at all (`server_capabilities.resources = None`; both `resources/list` and
+  `resources/templates/list` answer JSON-RPC `-32601 Method not found`) — a real, externally
+  verified fact about the current third-party package, not an agent86 defect; a fallback probe
+  confirmed the test file's exact text still reaches the caller through the server's actual
+  `tools/read_text_file` surface. `docs/mcp-conformance-matrix.md` then moved `CAP-RESOURCES`,
+  `CAP-RESOURCE-TEMPLATES`, `CAP-PROMPTS` and `CAP-COMPLETION` to `implemented` and
+  `CAP-RESOURCE-SUBSCRIBE` to `partial` (D-10 — the update notification is still dropped, MCP-24),
+  all five ruled `in`; `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES`'s reasoning cells name the
+  `server-filesystem` finding explicitly and cite the CI fixture's real stdio round trip (plan
+  11-02) as their corpus evidence instead. `docs/ARCHITECTURE.md` §15 lost the five matching
+  non-goal rows (departure recorded in its own block-quote) and §7 now names the new per-server
+  tool surface; `docs/mcp-conformance-audit-2026-09.md` was left untouched (D-09). README and
+  CHANGELOG document what shipped; `11-VALIDATION.md` is signed off
+  (`nyquist_compliant: true`, `status: complete`, every per-task row backed by a real `pytest`
+  result). Two documented, non-blocking deviations — both are real findings about third-party MCP
+  server behavior (the resources-capability absence above, and the prompt-count mismatch), neither
+  an agent86 defect requiring a fix. Full suite green: 1264 passed, 0 failed; `ruff check .` and
+  `mypy src/agent86` both clean; `git status --porcelain src/ tests/` empty throughout — this plan,
+  like the rest of Phase 11's plan 11-04 scope, touched no production code and no test.
 
 - 2026-09-24 — **Plan 11-03 complete (MCP prompts and completion become first-class, wave 3,
   MCP-15 closed):** `src/agent86/tools/mcp_client.py` gained three more capability-gated synthetic
@@ -1036,9 +1067,10 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 11 (resources-and-prompts-become-first-class) — EXECUTING
-Plan: 4 of 4
-Status: Ready to execute — plan 11-04 (phase signoff) is next
+Phase: 11 (resources-and-prompts-become-first-class) — COMPLETE (4/4 plans)
+Plan: 4 of 4 — 11-04 (phase signoff) landed 2026-09-24
+Status: Milestone v1.1 at 2/2 planned phases complete (Phase 10 + Phase 11); phases 12+ remain
+unwritten by design, promoted one at a time via `/gsd:add-phase`
 Last activity: 2026-09-24
 
 ## Next Step
@@ -1058,12 +1090,19 @@ start", not from the spec; one of them is a likely defect to confirm before fixi
 `finally` pops `self._sessions[name]` but leaves `self._server_tools[name]` populated, while
 `call_tool` indexes `self._sessions[server]`).
 
-**Phase 11 — Resources and prompts become first-class — is added and awaiting a plan**
-(`/gsd:plan-phase 11`). It is the first phase of the audit's recommended breakdown: workstream A,
-requirements MCP-14 and MCP-15, depends on Phase 10 only. Goal — a model connected through agent86
-can `list_resources`/`read_resource` against `server-filesystem` and `list_prompts`/`get_prompt`/
-`complete` against `server-everything`, with the same round-trip fidelity tool calls already have.
-Today there are zero call sites for any of the five (`mcp_client.py:220-221`).
+**Phase 11 — Resources and prompts become first-class — is complete** (4/4 plans, 2026-09-24). It
+was the first phase of the audit's recommended breakdown: workstream A, requirements MCP-14 and
+MCP-15, depended on Phase 10 only. Delivered: a capability-gated
+`mcp__{server}__{list_resources,read_resource,list_resource_templates,subscribe_resource,
+unsubscribe_resource,list_prompts,get_prompt,complete}` surface (plans 11-01…11-03), and the
+conformance re-ruling that closes it out (plan 11-04) — `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES`/
+`CAP-PROMPTS`/`CAP-COMPLETION` now `implemented`, `CAP-RESOURCE-SUBSCRIBE` `partial` (the update
+notification stays MCP-24). Live evidence (`phases/11-resources-and-prompts-become-first-class/
+11-EVIDENCE.md`) against the pinned `@2026.8.31` demo servers: SC2 met in full against
+`server-everything` (4 real prompts, `completable-prompt`/`department` returning real suggestions);
+SC1 **not met** against `server-filesystem`, which declares no `resources` capability at all in the
+currently published package — `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES` are instead evidenced by
+the CI fixture's own real stdio round trip. Not an agent86 defect; recorded, not fixed.
 
 **Phases 12+ stay unwritten** and are promoted one at a time from
 `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown": sampling/elicitation/roots

@@ -77,8 +77,8 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 
 ### Workstream A — client depth (Tier 4, with Tier 3 fallout)
 
-- **MCP-14**: Resources become first-class — `list_resources` and `read_resource`, absent today
-- **MCP-15**: Prompts become first-class — `list_prompts` and `get_prompt`, absent today
+- [x] **MCP-14**: Resources become first-class — `list_resources` and `read_resource`, absent today — Phase 11
+- [x] **MCP-15**: Prompts become first-class — `list_prompts` and `get_prompt`, absent today — Phase 11
 - **MCP-16**: Sampling, elicitation and roots are supported *only* as MCP-07 through MCP-09 rule
   them in. They are structurally absent today: `ClientSession(read, write)` is built with no
   callbacks, so any one of them is a constructor change
@@ -137,14 +137,17 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-11 | Phase 10 | Complete |
 | MCP-12 | Phase 10 | Complete |
 | MCP-13 | Phase 10 | Complete |
+| MCP-14 | Phase 11 | Complete |
+| MCP-15 | Phase 11 | Complete |
 
 **Coverage:**
-- v1.1 requirements: 12 total
-- Mapped to phases: 12
-- Unmapped: 0 ✓
+- v1.1 requirements: 14 total (12 Phase 10 + 2 Phase 11 to date)
+- Mapped to phases: 14
+- Unmapped: 0 ✓ (MCP-16…MCP-26 remain deferred, intentionally unmapped until written into a
+  future phase)
 
-Deferred (MCP-14…MCP-26) are intentionally unmapped — they are written into phases only after the
-matrix rules on them.
+Deferred (MCP-16…MCP-26) are intentionally unmapped — they are written into phases only after
+scoped via `/gsd:add-phase`.
 
 ---
 *Requirements defined: 2026-09-22*

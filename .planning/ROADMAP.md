@@ -50,7 +50,7 @@ implementation phases are now written from its recommended breakdown
   five-server corpus (recording versions), and settle the four contract-touching ADRs; audit-only,
   no implementation
   — **5 plans**, 4 waves
-- [ ] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` /
+- [x] **Phase 11: Resources and prompts become first-class** - Workstream A: `list_resources` / (completed 2026-09-24)
   `read_resource` / `list_prompts` / `get_prompt` / `complete` become real call sites, closing
   MCP-14 and MCP-15
   — **4 plans**, 4 waves
@@ -131,7 +131,7 @@ Plans:
   list/read/templates plus subscribe/unsubscribe, and the never-inlined blob (wave 2)
 - [x] 11-03-PLAN.md — prompts and argument completion become first-class (MCP-15): list/get
   prompts and `complete`, on the same seam (wave 3)
-- [ ] 11-04-PLAN.md — the two live-evidence runs, and the conformance matrix / ARCHITECTURE §15 /
+- [x] 11-04-PLAN.md — the two live-evidence runs, and the conformance matrix / ARCHITECTURE §15 /
   README / CHANGELOG re-ruling (wave 4)
 
 ## Next
@@ -140,15 +140,24 @@ Plans:
 matrix, the pinned five-server corpus, and the four contract-touching ADRs are landed, and the
 audit ends with a ruled phase breakdown for workstreams A, B and C.
 
-**Phase 11 — Resources and prompts become first-class — is planned**: 4 plans in 4 waves,
-`/gsd:execute-phase 11`. It is the first of that breakdown (workstream A, requirements MCP-14 and
-MCP-15) and depends on Phase 10 only. Three open questions the research left were resolved at plan
-time: `unsubscribe_resource` ships alongside `subscribe_resource` (the roadmap's "call site only"
-scopes out the *notification*, MCP-24, not the release verb); the real `server-everything` prompt
-and completable-argument names are gathered by an explicit evidence task rather than guessed, and
-never hardcoded into a CI test; and `subscribe_resource`/`unsubscribe_resource` are
-`side_effecting = True` while every read is not. `CAP-RESOURCE-SUBSCRIBE` therefore lands at
-`partial`, not `implemented` — which is why success criterion 3 names four rows, not five.
+**Phase 11 — Resources and prompts become first-class — is complete** (4/4 plans, 2026-09-24).
+Workstream A's first phase (requirements MCP-14 and MCP-15) shipped a capability-gated
+`mcp__{server}__{list_resources,read_resource,list_resource_templates,subscribe_resource,
+unsubscribe_resource,list_prompts,get_prompt,complete}` surface, and `docs/mcp-conformance-matrix.md`
+now rates `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES`/`CAP-PROMPTS`/`CAP-COMPLETION` `implemented` and
+`CAP-RESOURCE-SUBSCRIBE` `partial` (the update notification itself stays MCP-24), all five moved
+`out` → `in`. Success criterion 3 is met in full. Success criteria 1 and 2 were tested live against
+the pinned `@2026.8.31` demo servers, recorded verbatim in
+`phases/11-resources-and-prompts-become-first-class/11-EVIDENCE.md`: **SC2 met** —
+`server-everything` returned 4 real prompts (not the 3 this roadmap text originally expected) and
+`complete()` returned real suggestions for `completable-prompt`'s `department` argument
+(`Engineering`/`Sales`/`Marketing`/`Support`). **SC1 not met as literally worded** — the pinned
+`server-filesystem@2026.8.31` declares no `resources` capability at all (`Method not found` on
+`resources/list`), so file content reaches the model only through its `tools/read_text_file`
+surface, never `resources/read`; `CAP-RESOURCES`/`CAP-RESOURCE-TEMPLATES` are evidenced instead by
+the CI fixture's own real stdio round trip (plan 11-02), which does exercise a genuine MCP
+`resources` capability end to end. This is a fact about the current third-party package, not an
+agent86 defect, and is not this milestone's to fix.
 
 Phases 12+ remain **unwritten by design** and are promoted one at a time from the audit's
 recommended breakdown via `/gsd:add-phase`: sampling/elicitation/roots as an opt-in per-server
@@ -196,7 +205,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 3/4 plans executed
+**Plans:** 4/4 plans complete
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 
