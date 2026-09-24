@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-24T13:09:19.839Z"
+last_updated: "2026-09-24T13:19:48.860Z"
 last_activity: 2026-09-24
 progress:
   total_phases: 2
   completed_phases: 1
   total_plans: 9
-  completed_plans: 7
+  completed_plans: 8
 ---
 
 # Project State
@@ -67,7 +67,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | Phase | Status | Plans | Progress |
 |-------|--------|-------|----------|
 | 10 — MCP Conformance Audit | ● | 5/5 | 100% |
-| 11 — Resources and Prompts First-Class | ◐ | 2/4 | 50% |
+| 11 — Resources and Prompts First-Class | ◐ | 3/4 | 75% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -77,6 +77,40 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-24 — **Plan 11-03 complete (MCP prompts and completion become first-class, wave 3,
+  MCP-15 closed):** `src/agent86/tools/mcp_client.py` gained three more capability-gated synthetic
+  per-server tools — `mcp__{server}__list_prompts`, `get_prompt`, `complete` — built on plan
+  11-02's shared `_MCPCapabilityTool[TArgs]` base, extending (never re-creating) the seam:
+  `_capability_tools` gained two independent branches (`caps.prompts` mounts the two prompt
+  tools; `caps.completions` mounts `complete` alone — a server can declare either without the
+  other), and `MCPManager` gained `list_prompts`/`get_prompt`/`complete` sharing the existing
+  `_on_session` marshaller. `complete()` takes an explicit `ref_type: Literal["prompt",
+  "resource"]` (D-08) rather than guessing from a bare string — an invalid `ref_type` is refused
+  by Pydantic validation before the manager is ever reached. `_prompt_messages_to_text` renders a
+  non-text `PromptMessage` content block as a named `[non-text content block: TypeName — not
+  inlined]` marker with `{index, role, type}` recorded in `metadata["non_text_blocks"]` — never
+  `str(block)`, the Python repr `_content_to_text`'s pre-existing fallback still uses untouched
+  (D-07; that fix is MCP-25, workstream C). Verified against the real live fixture: a fresh
+  stdio connection now mounts nine tools per server (three remote, six synthetic), and
+  `get_prompt("review_code", {"path": "a.py", "style": "concise"})` renders `"Review a file in a
+  given style.\n\n[user]: Review the file at a.py in a concise style."`; `complete("alpha",
+  "prompt", "review_code", "style", "")` returns all three `STYLE_COMPLETIONS` and `"s"` filters
+  to exactly `["security-focused"]`. Seven new tests: five unit (independent capability mounting,
+  absent-mounts-neither, non-text-block marker, and the real `PromptReference`/argument-dict wire
+  shape) and two real-stdio integration tests. One documented, non-blocking deviation: the plan's
+  `grep -c "PromptReference"`/`"ResourceTemplateReference"` acceptance criteria expected 1 each
+  but the plan's own literal action text (docstring + constructor call) produces 2 each — a
+  planning-time miscount, not a code defect, separately pinned by the wire-shape unit test. One
+  structural deviation, documented not fixed (matching plan 11-02's own precedent): Tasks 1 and 2
+  landed as a single commit (`4325a0a`) rather than two, because Task 1's `Literal` import stays
+  unused until Task 2's `_CompleteArgs.ref_type` consumes it, which would fail `ruff check`
+  (F401) on a Task-1-only commit. Full suite green: 1264 passed (up from 1257), 0 failed; `mypy
+  src/agent86` and `ruff check .` both clean; the pre-existing unformatted `MCPTool.__init__`/
+  `spec()` spots (part of plan 10-05's logged 74-file `deferred-items.md` backlog) remain the
+  only `ruff format --check` gap, confirmed present before this plan touched the file.
+  `CAP-PROMPTS`/`CAP-COMPLETION` now implemented; `docs/mcp-conformance-matrix.md` update
+  deferred to plan 11-04 (phase signoff), matching this phase's plan structure.
 
 - 2026-09-24 — **Plan 11-02 complete (MCP resources become first-class, wave 2, MCP-14 closed):**
   `src/agent86/tools/mcp_client.py` gained five capability-gated synthetic per-server tools —
@@ -1003,8 +1037,8 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 11 (resources-and-prompts-become-first-class) — EXECUTING
-Plan: 3 of 4
-Status: Ready to execute
+Plan: 4 of 4
+Status: Ready to execute — plan 11-04 (phase signoff) is next
 Last activity: 2026-09-24
 
 ## Next Step

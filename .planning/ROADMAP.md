@@ -129,7 +129,7 @@ Plans:
   server, and a capability-aware fake session for unit tests (wave 1)
 - [x] 11-02-PLAN.md — resources become first-class (MCP-14): the capability-gated seam,
   list/read/templates plus subscribe/unsubscribe, and the never-inlined blob (wave 2)
-- [ ] 11-03-PLAN.md — prompts and argument completion become first-class (MCP-15): list/get
+- [x] 11-03-PLAN.md — prompts and argument completion become first-class (MCP-15): list/get
   prompts and `complete`, on the same seam (wave 3)
 - [ ] 11-04-PLAN.md — the two live-evidence runs, and the conformance matrix / ARCHITECTURE §15 /
   README / CHANGELOG re-ruling (wave 4)
@@ -196,7 +196,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BACKLOG — blocked)
 
