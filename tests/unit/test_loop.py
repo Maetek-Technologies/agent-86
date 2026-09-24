@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterator
 
 import pytest
@@ -977,3 +978,67 @@ def test_turn_start_falls_back_to_the_prompt_without_a_display_line():
 
     starts = [d for _s, kind, d in recorder.events if kind == "turn_start"]
     assert starts == [{"task": "plain ask"}]
+
+
+# ---- MCPManager.on_tools_changed <-> Harness.registry wiring (plan 12-04) --------- #
+
+
+def test_mcp_tools_changed_listener_is_wired_by_ensure_mcp():
+    h = _harness_no_mcp()
+    m = h.ensure_mcp()
+    assert m.on_tools_changed == h._on_mcp_tools_changed
+
+
+def test_mcp_tools_changed_listener_is_wired_at_construction(monkeypatch):
+    import agent86.orchestration.loop as loop_mod
+
+    monkeypatch.setattr(loop_mod, "build_mcp", lambda config: MCPManager({}))
+
+    h = Harness(_config(), provider=FakeProvider(), memory=None)
+
+    assert h.mcp is not None
+    assert h.mcp.on_tools_changed == h._on_mcp_tools_changed
+
+
+def test_mcp_tools_changed_removes_dead_server_tools():
+    h = _harness_no_mcp()
+    tool = _FakeMCPTool("mcp__srv__a")
+    h.registry.register(tool)
+
+    t = threading.Thread(target=h._on_mcp_tools_changed, args=("srv", [tool], []))
+    t.start()
+    t.join()
+
+    assert h.registry.get("mcp__srv__a") is None
+    assert "mcp__srv__a" not in [s.name for s in h.registry.specs()]
+
+
+def test_mcp_tools_changed_adds_reconnected_tools():
+    h = _harness_no_mcp()
+    tool = _FakeMCPTool("mcp__srv__b")
+
+    h._on_mcp_tools_changed("srv", [], [tool])
+
+    assert h.registry.get("mcp__srv__b") is tool
+
+
+def test_mcp_tools_changed_keeps_collision_winner():
+    h = _harness_no_mcp()
+    winner = _FakeMCPTool("mcp__srv__a")
+    h.registry.register(winner)
+    loser = _FakeMCPTool("mcp__srv__a")
+
+    h._on_mcp_tools_changed("srv", [loser], [])
+
+    assert h.registry.get("mcp__srv__a") is winner
+
+
+def test_mcp_tools_changed_never_raises(monkeypatch):
+    h = _harness_no_mcp()
+
+    def _boom(tool):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(h.registry, "try_register", _boom)
+
+    h._on_mcp_tools_changed("srv", [], [_FakeMCPTool("mcp__srv__c")])
