@@ -10,6 +10,9 @@ The MCP Python SDK is async and its sessions are long-lived; this manager runs a
 background event loop so the synchronous harness can call MCP tools via
 ``run_coroutine_threadsafe``. Everything degrades gracefully: no servers configured, or the
 ``mcp`` package missing, yields zero tools and a note rather than an error.
+
+Server-sent notifications (``tools``/``resources``/``prompts`` list_changed, progress, logging,
+and resource updates) are routed by ``MCPManager._on_notification`` (MCP-24).
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ import random
 import re
 import tempfile
 import threading
+import time
 import warnings
 from collections import deque
 from collections.abc import Callable, Coroutine
@@ -128,6 +132,33 @@ def _clip(text: str, limit: int = _NOTIFICATION_TEXT_MAX) -> str:
     """Server-supplied text for a note: one line, bounded."""
     flat = " ".join(str(text).split())
     return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
+#: Progress notes are live-only and throttled per server: a long-running tool may report many
+#: times a second. Completion (progress >= total) always notes.
+_PROGRESS_NOTE_INTERVAL_S = 2.0
+
+#: MCP LoggingLevel (RFC 5424 names, protocol 2025-11-25) -> Python logging level.
+_MCP_LOG_LEVELS = {
+    "debug": logging.DEBUG,
+    "info": logging.INFO,
+    "notice": logging.INFO,
+    "warning": logging.WARNING,
+    "error": logging.ERROR,
+    "critical": logging.CRITICAL,
+    "alert": logging.CRITICAL,
+    "emergency": logging.CRITICAL,
+}
+
+
+async def _request_progress(progress: float, total: float | None, message: str | None) -> None:
+    """Passed as ``progress_callback`` only so the SDK mints a progress token.
+
+    A spec-compliant server sends no ``notifications/progress`` for a request without one
+    (14-EVIDENCE.md). Observation happens generically in ``_serve_once``'s message handler,
+    which the SDK tees every progress notification to — not attributed to a specific call.
+    """
+    return None
 
 
 def _missing_required(schema: dict, arguments: Any) -> list[str]:
@@ -760,6 +791,11 @@ class MCPManager:
         #: name -> asyncio.Lock, created on the loop thread on first use (MCP-24): serializes
         #: back-to-back list_changed refetches for one server so they never interleave.
         self._refetch_locks: dict[str, asyncio.Lock] = {}
+        #: name -> latest (progress, total, message) seen from any call (MCP-24, CAP-PROGRESS).
+        self._last_progress: dict[str, tuple[float, float | None, str | None]] = {}
+        #: name -> time.monotonic() of the last progress NOTE fired (throttling; not every
+        #: progress delivery gets a note, but completion always does).
+        self._progress_note_at: dict[str, float] = {}
 
     def _add_note(self, message: str, *, persistent: bool = True) -> None:
         """Record a degradation without erasing the previous one.
@@ -906,10 +942,27 @@ class MCPManager:
             )
             self._add_note(f"MCP server '{name}': its {kind} list changed.", persistent=False)
             await self._refetch_tools(name, session, f"{kind}s/list_changed")
+        elif isinstance(message, mcp_types.ProgressNotification):
+            self._on_progress(name, message.params)
+        elif isinstance(message, mcp_types.LoggingMessageNotification):
+            p = message.params
+            logger.log(
+                _MCP_LOG_LEVELS.get(str(p.level), logging.INFO),
+                "MCP server %r [%s]: %s",
+                name,
+                p.logger or "-",
+                _clip(str(p.data), 500),
+            )
+        elif isinstance(message, mcp_types.ResourceUpdatedNotification):
+            self._add_note(
+                f"MCP server '{name}': subscribed resource updated: "
+                f"{_clip(str(message.params.uri))}; re-read it with "
+                f"{_sanitize(f'mcp__{name}__read_resource')}.",
+                persistent=False,
+            )
         else:
             # notifications/cancelled never reaches here (consumed by the SDK's dispatcher
             # before message_handler is called: mcp/client/session.py) — nothing to route.
-            # Task 2 (14-04) adds progress/logging/resource-updated branches here.
             logger.debug(
                 "MCP server %r: notification %s not routed", name, type(message).__name__
             )
@@ -1333,6 +1386,37 @@ class MCPManager:
         # live dict from the main thread could raise "dictionary changed size during iteration".
         return [tool for tools in list(self._server_tools.values()) for tool in tools]
 
+    def last_progress(self, name: str) -> tuple[float, float | None, str | None] | None:
+        """The latest ``(progress, total, message)`` seen from ``name``, any call. None if none."""
+        return self._last_progress.get(name)
+
+    def _on_progress(self, name: str, params: Any) -> None:
+        """Record and (throttled) note a ``ProgressNotification`` (CAP-PROGRESS).
+
+        Not attributed to a specific tool call — the SDK tees every progress notification here
+        generically, with no correlation back to which call requested a token (research: agent86
+        never mints its own progressToken). Completion (``progress >= total``) always notes, so a
+        fast-finishing operation is never silently swallowed by the throttle window.
+        """
+        progress = float(params.progress)
+        total = float(params.total) if params.total is not None else None
+        message = params.message
+        self._last_progress[name] = (progress, total, message)
+        done = total is not None and progress >= total
+        now = time.monotonic()
+        last = self._progress_note_at.get(name)
+        if not done and last is not None and now - last < _PROGRESS_NOTE_INTERVAL_S:
+            return
+        if done:
+            self._progress_note_at.pop(name, None)  # the next operation's first report notes
+        else:
+            self._progress_note_at[name] = now
+        amount = f"{progress:g}/{total:g}" if total is not None else f"{progress:g}"
+        text = f"MCP server '{name}': progress {amount}"
+        if message:
+            text += f" — {_clip(message)}"
+        self._add_note(text, persistent=False)
+
     def server_instructions(self, name: str) -> str | None:
         """The connected server's ``InitializeResult.instructions`` (ADR 0003), else None."""
         return self._instructions.get(name)
@@ -1426,7 +1510,9 @@ class MCPManager:
         limit = self._max_result_chars_for(server)
 
         async def _call() -> str:
-            result = await session.call_tool(tool, arguments)
+            result = await session.call_tool(
+                tool, arguments, progress_callback=_request_progress
+            )
             return _content_to_text(result, limit=limit, server=server)
 
         return self._await_result(

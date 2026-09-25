@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import inspect
+import logging
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -2389,5 +2390,255 @@ def test_list_changed_back_to_back_serialized(monkeypatch):
         names = [t.name for t in manager.tools_for("alpha")]
         assert sorted(names) == ["mcp__alpha__a", "mcp__alpha__b"]
         assert len(names) == len(set(names))
+    finally:
+        manager.close()
+
+
+# --- Plan 14-04, Task 2: request/observe progress; route logging + resource-updated ---------- #
+
+
+def test_progress_notification_requested_on_call_tool(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.call_tool("alpha", "a", {})
+        assert transport.call_kwargs[-1]["progress_callback"] is mcp_client._request_progress
+    finally:
+        manager.close()
+
+
+def test_progress_notification_not_requested_for_capability_calls(monkeypatch):
+    calls: list = []
+    _install_fake_transport(
+        monkeypatch,
+        [_fake_tool("a")],
+        capabilities=_FakeCaps(resources=_FakeResourcesCap()),
+        responses={"list_resources": _fake_result(resources=[])},
+        calls=calls,
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.list_resources("alpha")
+        method, args, kw = calls[-1]
+        assert method == "list_resources"
+        assert "progress_callback" not in kw
+    finally:
+        manager.close()
+
+
+def test_progress_notification_is_observed_as_live_note(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(
+                    progress_token=1, progress=1, total=3, message="step 1"
+                )
+            ),
+        )
+        assert manager.last_progress("alpha") == (1.0, 3.0, "step 1")
+        _seq, messages = manager.notes_since(0)
+        assert any("MCP server 'alpha': progress 1/3 — step 1" in m for m in messages)
+        assert not any("MCP server 'alpha': progress 1/3 — step 1" in n for n in manager.notes)
+    finally:
+        manager.close()
+
+
+def test_progress_notification_throttled(monkeypatch):
+    import agent86.tools.mcp_client as mcp_client
+
+    types = pytest.importorskip("mcp.types")
+    monkeypatch.setattr(mcp_client, "_PROGRESS_NOTE_INTERVAL_S", 60)
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(progress_token=1, progress=1, total=3)
+            ),
+        )
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(progress_token=1, progress=2, total=3)
+            ),
+        )
+        _seq, messages = manager.notes_since(0)
+        assert len(messages) == 1
+        assert "progress 1/3" in messages[0]
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(progress_token=1, progress=3, total=3)
+            ),
+        )
+        _seq, messages = manager.notes_since(0)
+        assert len(messages) == 2
+        assert "progress 3/3" in messages[1]
+        assert manager.last_progress("alpha") == (3.0, 3.0, None)
+    finally:
+        manager.close()
+
+
+def test_progress_notification_without_total(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(progress_token=1, progress=5, total=None)
+            ),
+        )
+        _seq, messages = manager.notes_since(0)
+        note = messages[0]
+        assert "progress 5" in note
+        assert "/" not in note.split("progress 5", 1)[1]
+    finally:
+        manager.close()
+
+
+def test_progress_notification_message_is_clipped(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        long_message = "line one\nline two\n" + ("x" * 1000)
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(
+                    progress_token=1, progress=1, total=3, message=long_message
+                )
+            ),
+        )
+        _seq, messages = manager.notes_since(0)
+        note = messages[0]
+        assert "\n" not in note
+        message_part = note.split("— ", 1)[1]
+        assert len(message_part) <= 200
+        assert message_part.endswith("…")
+    finally:
+        manager.close()
+
+
+def test_logging_notification_goes_to_python_logger(monkeypatch, caplog):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    caplog.set_level(logging.DEBUG, logger="agent86.tools.mcp_client")
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.LoggingMessageNotification(
+                params=types.LoggingMessageNotificationParams(
+                    level="warning", logger="lg", data="disk low"
+                )
+            ),
+        )
+        records = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert any("MCP server 'alpha' [lg]: disk low" in r.getMessage() for r in records)
+        _seq, messages = manager.notes_since(0)
+        assert not any("disk low" in m for m in messages)
+    finally:
+        manager.close()
+
+
+@pytest.mark.parametrize(
+    "mcp_level,py_level",
+    [
+        ("emergency", logging.CRITICAL),
+        ("notice", logging.INFO),
+        ("debug", logging.DEBUG),
+        ("error", logging.ERROR),
+    ],
+)
+def test_logging_notification_level_mapping(monkeypatch, caplog, mcp_level, py_level):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    caplog.set_level(logging.DEBUG, logger="agent86.tools.mcp_client")
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.LoggingMessageNotification(
+                params=types.LoggingMessageNotificationParams(
+                    level=mcp_level, logger="lg", data="hi"
+                )
+            ),
+        )
+        matching = [r for r in caplog.records if "MCP server 'alpha' [lg]: hi" in r.getMessage()]
+        assert matching and matching[-1].levelno == py_level
+    finally:
+        manager.close()
+
+
+def test_resource_updated_notification_is_a_live_note(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(
+            manager,
+            types.ResourceUpdatedNotification(
+                params=types.ResourceUpdatedNotificationParams(uri="res://agent86/greeting.txt")
+            ),
+        )
+        _seq, messages = manager.notes_since(0)
+        expected = (
+            "MCP server 'alpha': subscribed resource updated: res://agent86/greeting.txt; "
+            "re-read it with mcp__alpha__read_resource."
+        )
+        assert any(expected in m for m in messages)
+        assert not any(expected in n for n in manager.notes)
+    finally:
+        manager.close()
+
+
+def test_unrouted_notification_is_ignored(monkeypatch):
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        seq_before = manager.note_seq
+        transport.notify(manager, object())  # must not raise
+        assert manager.note_seq == seq_before
+    finally:
+        manager.close()
+
+
+def test_notification_handler_never_raises(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")])]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+
+        def _boom(name, params):
+            raise RuntimeError("boom")
+
+        monkeypatch.setattr(manager, "_on_progress", _boom)
+        transport.notify(
+            manager,
+            types.ProgressNotification(
+                params=types.ProgressNotificationParams(progress_token=1, progress=1, total=3)
+            ),
+        )  # must not raise
     finally:
         manager.close()
