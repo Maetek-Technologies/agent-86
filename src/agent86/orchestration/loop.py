@@ -23,7 +23,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 from agent86.cognitive.base import ModelProvider
-from agent86.cognitive.prompt import build_system_prompt
+from agent86.cognitive.prompt import build_system_prompt, render_mcp_section
 from agent86.config import CompactionMode, Config, MCPServerConfig
 from agent86.guardrails.egress import EgressGuardrail
 from agent86.guardrails.ingress import IngressGuardrail, wrap_untrusted
@@ -439,8 +439,37 @@ class Harness:
 
     # ---- request construction ----------------------------------------- #
 
+    def _mcp_prompt_section(self) -> str:
+        """Names (plus instructions) of every callable MCP tool, per mounted server — ADR 0003.
+
+        Recomputed per request, like the budget, because servers mount, drop, reconnect and
+        change their tool lists mid-session. Only tools the registry would actually dispatch
+        are listed (identity check). Duck-typed on ``prompt_catalog`` so a manager without it —
+        including test fakes — contributes nothing. Never raises.
+        """
+        catalog = getattr(self.mcp, "prompt_catalog", None) if self.mcp is not None else None
+        if catalog is None:
+            return ""
+        try:
+            entries: list[tuple[str, list[str], str | None]] = []
+            for server, tools, instructions in catalog():
+                names = []
+                for t in tools:
+                    registered = self.registry.get(t.name)
+                    if registered is not None and registered is t:
+                        names.append(t.name)
+                if names or instructions:
+                    entries.append((server, names, instructions))
+            return render_mcp_section(entries)
+        except Exception:  # noqa: BLE001 - a prompt section must never fail a request
+            logger.debug("building the MCP prompt section failed", exc_info=True)
+            return ""
+
     def _system_content(self, extra_system: str | None) -> str:
         content = self.system_prompt.content
+        mcp_section = self._mcp_prompt_section()
+        if mcp_section:
+            content = f"{content}\n\n{mcp_section}"
         if extra_system:
             content = f"{content}\n\n{extra_system}"
         return content

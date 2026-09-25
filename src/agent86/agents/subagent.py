@@ -58,16 +58,17 @@ class SubAgent:
         return getattr(self.h.config.agents, "max_steps", DEFAULT_SUB_MAX_STEPS)
 
     def _system(self) -> Message:
-        """Role preamble + the parent's compiled system prompt.
+        """Role preamble + the parent's compiled system content.
 
         Sub-agents used to get the persona and nothing else: no environment facts and — the
         real problem — no skills list, so ``use_skill`` was advertised to them as a tool with
-        no way of knowing what to ask it for. ``build_system_prompt``'s output, which the
-        harness compiled once at startup, is reused verbatim beneath the preamble.
+        no way of knowing what to ask it for. The parent's compiled system content — including
+        the per-request MCP section (ADR 0003) — is reused beneath the preamble, so a delegated
+        task also sees the MCP tool names its (shared, deferred) tool specs rely on.
         """
         return Message(
             role=Role.SYSTEM,
-            content=f"{_ROLE_PREAMBLE.format(role=self.role)}\n\n{self.h.system_prompt.content}",
+            content=f"{_ROLE_PREAMBLE.format(role=self.role)}\n\n{self.h._system_content(None)}",
         )
 
     def _specs(self):
