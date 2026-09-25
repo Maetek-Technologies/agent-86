@@ -283,7 +283,7 @@ Plans:
   notification delivery (wave 1)
 - [x] 14-02-PLAN.md — per-request MCP section in the system message: every callable tool name
   plus server instructions (ADR 0003), shared with sub-agents (wave 1)
-- [ ] 14-03-PLAN.md — `MCPTool` schema deferral until first execution, instructions capture and
+- [x] 14-03-PLAN.md — `MCPTool` schema deferral until first execution, instructions capture and
   `prompt_catalog()`, same-turn budget proof (MCP-20) (wave 2)
 - [ ] 14-04-PLAN.md — `_on_message` routing: `list_changed` re-fetch through Phase 12's sync
   path, progress (token requested, observed generically), logging, resource updates (MCP-24)
@@ -381,7 +381,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 2/6 plans executed
+**Plans:** 3/6 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 

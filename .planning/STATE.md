@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-25T02:40:10.922Z"
+last_updated: "2026-09-25T02:58:56.327Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 29
-  completed_plans: 25
+  completed_plans: 26
 ---
 
 # Project State
@@ -83,6 +83,41 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-25 — **Plan 14-03 complete (MCP schema deferral, server instructions, and the
+  same-turn budget proof, wave 2, MCP-20 closed):** `MCPTool` gained a materialisation flag
+  flipped synchronously at the top of `run()`, before any return — a never-called tool
+  advertises its name with `ToolSpec`'s own default-empty stub schema (`{"type": "object",
+  "properties": {}}`) plus a `" [argument schema loads on first call]"` description suffix;
+  the real server schema materialises for the rest of the session on first execution, success
+  or failure alike. A first call missing the real schema's `required` keys is answered with a
+  named error and never reaches the server; the precheck only fires on first use. Every
+  first-use `ToolResult` carries `metadata={"schema_materialized": True}` — additive
+  tool-result metadata, not a `run --json` key. `_MCPCapabilityTool` synthetic tools and any
+  argument-less tool are never deferred; unconditional, no new `config.py` field
+  (`git diff --stat src/agent86/config.py` empty), per the plan's own ruling. Thirteen new unit
+  tests prove the stub round-trips unchanged through all three provider wire shapes (Anthropic
+  `input_schema`, OpenAI-compatible/Ollama `function.parameters`) both before and after
+  materialisation — the Pitfall 1 check that could have overturned the "no config field"
+  ruling did not: no adapter meets a new shape. Separately, `session.initialize()`'s
+  `InitializeResult.instructions` is now captured per server (stripped-empty to `None`), set
+  atomically directly before `self._sessions[name] = session` (never before "connected" is
+  true) and popped beside `_sessions`/`_server_tools` in every `_serve_once` exit path and in
+  `stop_server`; new `MCPManager.server_instructions()`/`prompt_catalog() -> list[tuple[str,
+  list[Tool], str | None]]` feed plan 14-02's `Harness._mcp_prompt_section()` with zero change
+  to `loop.py` (`git diff --stat src/agent86/orchestration/loop.py` empty). A new
+  `test_budget_shrinks_in_the_step_that_materialises` proves ADR 0003 SC2 end-to-end: a
+  materialising schema's cost is already reflected — and subtracted from the budget by exactly
+  the same amount — in the very next request of the same turn, with no new `_context_budget`
+  hook (`test_budget_hook_unchanged` pins the method's signature and its exactly-2 call sites).
+  No deviations; one pre-existing Phase 12 timing-sensitive test
+  (`test_death_eof_clears_sessions_and_tools`, untouched by this plan) flaked once under full-
+  suite load and passed 3/3 in isolation and on a clean full-suite re-run — a known category of
+  flake documented in prior phases (e.g. 13-04), not a regression. Full suite green: `pytest -q`
+  1404 passed (up from 1367), 0 failed, 14 deselected; `mypy src/agent86` and `ruff check .`
+  both clean. `docs/mcp-conformance-matrix.md`/`ARCHITECTURE.md` §15/CHANGELOG/REQUIREMENTS.md
+  traceability updates are left to this phase's own signoff plan (14-06), matching this
+  milestone's established per-phase docs sequencing (Phases 11-13's own final plans).
 
 - 2026-09-25 — **Plan 14-01 complete (Wave 0 live evidence + test machinery for schema deferral
   and notification handling, wave 1, no production code touched):** `14-EVIDENCE.md` answers
@@ -1301,7 +1336,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
-Plan: 3 of 6
+Plan: 4 of 6
 Status: Ready to execute
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
