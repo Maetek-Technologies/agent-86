@@ -8,6 +8,26 @@ All notable changes to agent86 are documented here. The format follows
 
 ### Added
 
+- **MCP tool schemas are deferred to first use** ([ADR 0003](docs/adr/0003-mcp-schema-deferral-prompt-contract.md)). A mounted MCP tool's
+  name — and its server's `instructions`, when it sets any — is in the system message on every
+  request; the tool's own argument schema stays a stub (`{"type": "object", "properties": {}}`)
+  until the harness actually runs it once, whereupon it materialises for the rest of the session
+  and the very next request of that same turn already reflects the real cost. A first call
+  missing a required argument is answered with their names and never reaches the server; the
+  precheck fires only on the first use. There is no config key — deferral is unconditional — and
+  `run --json`'s keys are unchanged (a first-use `ToolResult` carries additive `metadata`, not a
+  new top-level key). At least one pinned corpus server sets instructions: `server-everything`
+  ([`14-EVIDENCE.md`](.planning/phases/14-schema-deferral-and-notification-handling/14-EVIDENCE.md)'s
+  Conclusion for SC1). Closes MCP-20.
+- **MCP server notifications are handled.** `tools/list_changed` (and its resources/prompts
+  siblings) re-fetch a server's tool list into the live registry without a restart, preserving an
+  unchanged tool's identity across the re-list; progress is requested on every tool call and
+  shown as a throttled live note, not attributed to a specific call; a subscribed resource's
+  update notification arrives as a live note naming the URI; server log messages reach agent86's
+  own logger. Cancellation notifications are not handled — the SDK's own dispatcher consumes
+  `notifications/cancelled` before agent86's code ever sees it. Moves `CAP-LIST-CHANGED`,
+  `CAP-PROGRESS` and `CAP-RESOURCE-SUBSCRIBE` to `implemented` and `CAP-LOGGING` to `partial` in
+  [`docs/mcp-conformance-matrix.md`](docs/mcp-conformance-matrix.md). Closes MCP-24.
 - **Per-server MCP timeouts.** `[mcp.servers.<name>]` now accepts `connect_timeout_s` (default
   30) and `call_timeout_s` (default 120, also governing resource, prompt and completion calls) —
   the old hardcoded values, so an existing config behaves identically until it sets one. An
@@ -33,9 +53,8 @@ All notable changes to agent86 are documented here. The format follows
   call sites, surfaced to the model as per-server tools gated on the capabilities the server
   advertised at `initialize()` — so a tools-only server's tool list is unchanged. Binary resource
   content is summarised, never inlined as base64; a non-text prompt block renders as a named
-  marker rather than a Python repr. Resource *update notifications* are still dropped
-  (`message_handler` is a later phase), so `subscribe_resource` records intent only, and is
-  approval-gated for that reason. Closes MCP-14 and MCP-15, moving `CAP-RESOURCES`,
+  marker rather than a Python repr. Resource update notifications arrive as live notes since
+  MCP-24 (above); `subscribe_resource` stays approval-gated. Closes MCP-14 and MCP-15, moving `CAP-RESOURCES`,
   `CAP-RESOURCE-TEMPLATES`, `CAP-PROMPTS` and `CAP-COMPLETION` to `implemented` in
   [`docs/mcp-conformance-matrix.md`](docs/mcp-conformance-matrix.md).
 - **MCP servers reconnect after a dropped transport.** A server killed mid-session is retried

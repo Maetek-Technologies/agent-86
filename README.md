@@ -367,6 +367,14 @@ routinely exceed the 8,000-char default with no way to narrow the request — ra
 `/config mcp` does not have form fields for these three yet, so hand-edit the TOML; the
 connection test inside `/config mcp` keeps its own fixed 30s cap regardless of what you set here.
 
+**MCP tool lists stay live.** Every mounted MCP tool's name is in the prompt on every request,
+but its argument schema is deferred until the first time you actually call it — a first call
+missing a required argument is told which one, without ever reaching the server. A server that
+adds or removes tools mid-session (a real `tools/list_changed`, not a restart) is reflected in
+`/tools` and the model's own tool list the moment it happens. Progress on a long-running call and
+a subscribed resource's update both show up as `mcp:` notes in the transcript; server log
+messages go to agent86's own log output, not the transcript.
+
 ## Skills
 
 A skill is a folder with a `SKILL.md` in it: YAML frontmatter the harness reads, and a body of
