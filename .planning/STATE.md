@@ -23,8 +23,9 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 14 — schema-deferral-and-notification-handling is plan-complete (6/6
-plans); awaiting the orchestrator's phase-gate and v1.1 milestone-close verification.
+**Current focus:** Phase 15 — connect to GitHub's hosted server and implement OAuth 2.0
+discovery/authorization (MCP-17, workstream B) — added 2026-09-25, not yet planned. Phase 14 is
+complete and verified (6/6 plans, 2026-09-25).
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
 ADRs. v1.0 shipped as v1.0.0 and the harness remains complete against `docs/ARCHITECTURE.md`.
@@ -1446,13 +1447,21 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   at `:959`), which records transport exceptions and drops every notification, so MCP-24 extends
   that handler rather than adding one; `_context_budget` is at `orchestration/loop.py:458`.
 
+- Phase 15 added: Connect to GitHub's hosted server and implement OAuth 2.0
+  discovery/authorization — workstream B's first phase (MCP-17), promoted 2026-09-25 from the same
+  breakdown (Proposed Phase 13, renumbered on promotion) once Phase 14 closed workstream C. Audit
+  refs re-pinned: `_resolve_server_secrets` is now `mcp_client.py:1710` (audit said `:336-358`)
+  and `_streamable_http` is `:1694`. The audit never connected to GitHub's hosted server, so the
+  first plan must make that live connection before any implementation. `gsd-tools phase add`
+  again appended the entry inside `## Backlog`; it was moved by hand into the v1.1 milestone.
+
 ## Current Position
 
-Phase: 14
+Phase: 15
 Plan: Not started
-Status: Phase complete — ready for verification
-2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
-a time via `/gsd:add-phase`
+Status: Phase 15 added (2026-09-25), not yet planned — next is `/gsd:plan-phase 15`; later
+workstream-B phases (MCP-18/MCP-19) remain unwritten by design, promoted one at a time via
+`/gsd:add-phase`
 Last activity: 2026-09-25
 
 ## Next Step

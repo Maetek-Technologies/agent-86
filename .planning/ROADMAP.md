@@ -36,7 +36,7 @@ GSD plans; each still carries a `SUMMARY.md` in `phases/`.
 
 </details>
 
-### v1.1 MCP Integration Depth (5/5 phases plan-complete, awaiting milestone-close verification)
+### v1.1 MCP Integration Depth (5/6 phases complete; Phase 15 not yet planned)
 
 **Milestone Goal:** Rule on the client half of the MCP spec — the conformance matrix, the pinned
 server corpus, and the four contract-touching ADRs — so the implementation phases (workstreams A,
@@ -67,6 +67,9 @@ implementation phases are now written from its recommended breakdown
 - [x] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas (completed 2026-09-25)
   deferred to first use per ADR 0003 (names stay up front), and server notifications routed so a
   mid-session `list_changed` re-fetches the tool list, closing MCP-20 and MCP-24
+- [ ] **Phase 15: Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization** -
+  Workstream B: RFC 8414/9728 discovery and an interactive authorization-code flow proven
+  live against `https://api.githubcopilot.com/mcp/`, closing MCP-17
 
 ## Phase Details
 
@@ -293,6 +296,40 @@ Plans:
 - [x] 14-06-PLAN.md — matrix re-ruling, ARCHITECTURE/CHANGELOG/README, validation sign-off, and
   human TUI check (wave 5)
 
+#### Phase 15: Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization
+**Workstream**: B
+**Goal**: agent86 can discover and complete an OAuth 2.0 authorization-code flow against a real
+remote MCP server over streamable HTTP, proven against GitHub's hosted server rather than a mock.
+**Depends on**: Phase 10 only (sequenced after Phase 14; it reuses Phase 12's reconnect path and
+Phase 13's per-server config surface, but neither blocks it)
+**Requirements**: MCP-17
+**Matrix rows closed**: `CAP-OAUTH` (`absent` → `partial`: discovery and first-time authorization;
+refresh and keyring storage are the next workstream-B phase, MCP-18/MCP-19)
+**Success Criteria** (what must be TRUE):
+  1. agent86 completes RFC 8414/9728-based discovery against `https://api.githubcopilot.com/mcp/`
+     and obtains a token via an interactive authorization-code flow.
+  2. The obtained token lists tools from GitHub's hosted server over streamable HTTP — the first
+     live connection the Phase 10 audit did not make.
+  3. No credential is written to `config.py`-managed TOML at any point in the flow — only a
+     reference, per CLAUDE.md's `api_key_env` rule.
+**Sizing signal**: `_resolve_server_secrets` (`mcp_client.py:1710`, formerly `:336-358`) supports
+only `headers` plus `${VAR}` — no discovery, no authorization flow, no token storage anywhere in
+the file; `_streamable_http` (`mcp_client.py:1694`) already builds the SDK's HTTP client, so the
+auth hook lands on an existing transport. GitHub's hosted server is a named, realistic demand
+signal, not the conformance instrument.
+**Risk / constraint**: the workstream that strains the standing constraints hardest — an OAuth
+flow that must eventually work both interactively and headless in CI is a design decision, not a
+library choice (the headless half is MCP-19, next phase). The Phase 10 audit did **not** connect to
+GitHub's hosted server (no GitHub OAuth app or credentials existed in that environment), so this
+phase's first plan must begin by doing so before any implementation is written. The `mcp` extra
+stays optional; no new core dependency; tokens never touch config TOML.
+**Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
+§ "Recommended phase breakdown" → Proposed Phase 13 (renumbered 15 on promotion)
+**Plans**: 0 plans
+
+Plans:
+- [ ] TBD (run /gsd:plan-phase 15 to break down)
+
 ## Next
 
 **Phase 10 — MCP Conformance Audit — is complete** (5/5 plans, 2026-09-23). The conformance
@@ -343,11 +380,15 @@ are now `implemented`; `CAP-LOGGING` moved to `partial`; `CAP-CANCELLATION` stay
 SDK's own dispatcher consumes incoming cancellations before agent86's code ever sees them, so
 notification routing cannot close it. A human confirmed live in the TUI (approved 2026-09-25) that
 a mid-session `list_changed` mounts a new tool with no restart. **This closes the v1.1 "MCP
-Integration Depth" milestone's last written phase: 5/5 phases, 29/29 plans complete.**
+Integration Depth" milestone's workstream-C phases: 5 phases, 29/29 plans complete.**
 
-Phases 15+ remain **unwritten by design** and are promoted one at a time from the audit's
-recommended breakdown via `/gsd:add-phase`: OAuth discovery/authorization and token refresh
-against GitHub's hosted server (B). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
+**Phase 15 — Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization —
+is next** (promoted 2026-09-25, not yet planned): workstream B's first phase, MCP-17. Plan it with
+`/gsd:plan-phase 15`; its first plan must make the live GitHub connection the audit never made.
+
+Later phases remain **unwritten by design** and are promoted one at a time from the audit's
+recommended breakdown via `/gsd:add-phase`: token refresh and keyring storage, interactive and
+headless (B, MCP-18/MCP-19). Sampling/elicitation/roots (A, MCP-16) stays behind them: the matrix
 rules all three `out` under the BACKLOG's "the ceiling is demand" rule until a realistic corpus
 server needs them (ADRs 0001/0002). Sizing, corrected by the audit: **C is larger than A on
 findings and deferred requirements, and materially larger than B on every metric**; A leads only
@@ -399,7 +440,8 @@ head start — start there, not from the spec.
 **Phase 11** (999.0b, workstream A — MCP-14/MCP-15, complete 2026-09-24) and **Phase 12**
 (999.0d, workstream C — MCP-26/MCP-23, complete 2026-09-24) and **Phase 13** (999.0d, workstream
 C — MCP-21/MCP-22/MCP-25, complete 2026-09-24) and **Phase 14** (999.0d, workstream C —
-MCP-20/MCP-24, promoted 2026-09-24). The rest are promoted one at a time.
+MCP-20/MCP-24, complete 2026-09-25) and **Phase 15** (999.0c, workstream B — MCP-17, promoted
+2026-09-25). The rest are promoted one at a time.
 **Goal:** The three workstreams themselves.
 **Requirements:** MCP-16…MCP-26, per the audit's breakdown.
 **Plans:** 0 plans
