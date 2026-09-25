@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: Phase 13 complete
-last_updated: "2026-09-24T18:58:37.173Z"
-last_activity: 2026-09-24
+status: executing
+last_updated: "2026-09-25T02:27:51.324Z"
+last_activity: 2026-09-25 -- Phase 14 execution started
 progress:
-  total_phases: 4
+  total_phases: 5
   completed_phases: 4
-  total_plans: 23
+  total_plans: 29
   completed_plans: 23
 ---
 
@@ -23,7 +23,7 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 13 — Per-server timeouts, the result cap, and non-text content
+**Current focus:** Phase 14 — schema-deferral-and-notification-handling
 close.
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
@@ -1268,12 +1268,12 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 14 (Schema deferral and notification handling) — NOT PLANNED
-Plan: 0 of TBD
-Status: Milestone v1.1 at 4/5 written phases complete (Phases 10-13; Phase 14 promoted
+Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
+Plan: 1 of 6
+Status: Executing Phase 14
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
-Last activity: 2026-09-24
+Last activity: 2026-09-25 -- Phase 14 execution started
 
 ## Next Step
 
