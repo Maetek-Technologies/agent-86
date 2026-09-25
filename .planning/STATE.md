@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-25T02:58:56.327Z"
+last_updated: "2026-09-25T03:13:03.091Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 29
-  completed_plans: 26
+  completed_plans: 27
 ---
 
 # Project State
@@ -83,6 +83,45 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-25 — **Plan 14-04 complete (route list_changed, progress, logging, and resource
+  updates, wave 3, MCP-24 closed):** `_serve_once`'s `_on_message` no longer silently drops
+  every `ServerNotification`: a new `MCPManager._on_notification(name, session, message)`
+  routes anything that isn't a transport `Exception` item, guarded by `if not this_session:
+  return` (ignored before the session is marked live) and a `try/except` backstop so a routing
+  bug can never escape into the SDK's dispatcher. `ToolListChangedNotification` triggers
+  `_refetch_tools`, which re-runs `session.list_tools()` only — capabilities are fixed for a
+  session's lifetime, so the existing synthetic capability tools are reused as-is — diffs the
+  fresh list against the current `MCPTool` set by `(description, schema, read_only)` equality
+  (14-03's `_definition` tuple) and calls Phase 12's existing `_emit_tools_changed(name, removed,
+  added)` with the real diff: an unchanged tool keeps its object and its ADR 0003 `materialized`
+  flag, a redefined tool is replaced, a no-op re-list produces zero events. The refetch writes
+  `self._server_tools[name]` only while `self._sessions.get(name) is session` (the exact session
+  the notification's own `_serve_once` owns), so a `list_changed` notification racing
+  `stop_server()` or a transport death can never resurrect a torn-down server; a per-server
+  `asyncio.Lock` serializes back-to-back notifications; a `list_tools()` failure degrades to a
+  note, never a raise. `ResourceListChangedNotification`/`PromptListChangedNotification` fire a
+  live-only note and run the same tools re-fetch, per the plan's scope ruling that only
+  `tools/list` needs re-running. `_add_note` gained `persistent: bool = True` — `persistent=False`
+  reaches listeners and `notes_since` but never the startup-rendered `notes` list, used for
+  progress/resource-updated/resource-prompt-list-changed notes so a long session's rendered
+  history isn't dominated by high-frequency events. `call_tool` now passes a module-level no-op
+  `_request_progress` as `progress_callback` purely so the SDK mints a progress token (a
+  spec-compliant server sends none otherwise, per 14-EVIDENCE.md); `ProgressNotification` is
+  observed generically (not attributed to a specific call) via `_on_progress`, keeping the
+  latest `(progress, total, message)` per server for `MCPManager.last_progress(name)` and firing
+  a live-only note at most once per `_PROGRESS_NOTE_INTERVAL_S = 2.0` per server, always on
+  completion. `LoggingMessageNotification` reaches `agent86.tools.mcp_client`'s Python logger at
+  the mapped RFC 5424 level (no note, no `logging/setLevel`); `ResourceUpdatedNotification`
+  becomes a live note naming the URI and the `read_resource` tool; `CancelledNotification` gets
+  no branch at all, since the SDK's dispatcher consumes it before `message_handler` ever runs.
+  Twenty-one new unit tests cover every branch, both list-changed-vs-death and
+  list-changed-vs-stop races, back-to-back serialization, throttling with always-on completion,
+  message clipping, and the handler surviving a monkeypatched branch that raises. No deviations.
+  Full suite green: `pytest -q` 1428 passed (up from 1404), 0 failed, 14 deselected; `mypy
+  src/agent86` and `ruff check .` both clean. `docs/mcp-conformance-matrix.md`/
+  `ARCHITECTURE.md` §15/CHANGELOG/REQUIREMENTS.md traceability updates are left to this phase's
+  own signoff plan (14-06), matching this milestone's established per-phase docs sequencing.
 
 - 2026-09-25 — **Plan 14-03 complete (MCP schema deferral, server instructions, and the
   same-turn budget proof, wave 2, MCP-20 closed):** `MCPTool` gained a materialisation flag
@@ -1336,7 +1375,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
-Plan: 4 of 6
+Plan: 5 of 6
 Status: Ready to execute
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
