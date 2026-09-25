@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import os
 import signal
 import sys
@@ -17,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from agent86.config import MCPServerConfig, load_config
+from agent86.orchestration.loop import Harness
 from agent86.tools.mcp_client import (
     MCPManager,
     MCPServerUnavailable,
@@ -24,7 +26,8 @@ from agent86.tools.mcp_client import (
     MCPTool,
     build_mcp,
 )
-from agent86.types import ToolCall
+from agent86.types import ApprovalMode, Completion, ToolCall, Usage
+from tests.support import ScriptedProvider, TextProvider
 
 # The stdio lifecycle tests below drive the real `live_mcp_server.py`, which is built on the
 # SDK's own server API. This probed `mcp.server.fastmcp` until mcp 2.0 removed it (FastMCP
@@ -625,3 +628,198 @@ def test_real_stdio_embedded_and_link_blocks_render_markers():
         assert "EmbeddedResource(" not in out
     finally:
         manager.close()
+
+
+# --- Plan 14-05: real-stdio proof of schema deferral and notification routing (MCP-20/MCP-24) --- #
+
+
+def _notify_cfg(instructions: str | None = None) -> MCPServerConfig:
+    """A stdio cfg with 14-01's opt-in notification probes (and optional server instructions)."""
+    env = {"AGENT86_LIVE_MCP_NOTIFY_TOOLS": "1"}
+    if instructions is not None:
+        env["AGENT86_LIVE_MCP_INSTRUCTIONS"] = instructions
+    return MCPServerConfig(command=sys.executable, args=[str(_SERVER), "stdio", "0"], env=env)
+
+
+def _harness_with(
+    name: str, cfg: MCPServerConfig, provider: object = None
+) -> tuple[Harness, MCPManager]:
+    """A real Harness with one real stdio server mounted the way the TUI does it."""
+    harness = Harness(load_config(), provider=provider or TextProvider("ok"), memory=None)
+    manager = harness.ensure_mcp()
+    manager.start_server(name, cfg, timeout=30.0)
+    harness.add_mcp_server(name, cfg)
+    return harness, manager
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_list_changed_mounts_and_unmounts_through_the_harness():
+    """SC3: a mid-session tool-list change reaches the harness registry and the system message
+    with no restart, and the added tool is callable end to end through the real registry."""
+    harness, manager = _harness_with("alpha", _notify_cfg())
+    try:
+        original_add = harness.registry.get("mcp__alpha__add")
+        assert original_add is not None
+        assert "mcp__alpha__dynamic_echo" not in harness.registry.names()
+
+        manager.call_tool("alpha", "grow_tools", {})
+        assert _wait_until(lambda: "mcp__alpha__dynamic_echo" in harness.registry.names(), 10.0)
+        assert "mcp__alpha__dynamic_echo" in harness._system_content(None)
+
+        result = harness.registry.dispatch(
+            ToolCall(id="d1", name="mcp__alpha__dynamic_echo", arguments={"text": "hi"}),
+            harness.context,
+        )
+        assert result.ok
+        assert "dynamic: hi" in result.content
+
+        assert any(
+            "changed its tool list" in note and "mcp__alpha__dynamic_echo" in note
+            for note in manager.notes
+        )
+
+        manager.call_tool("alpha", "shrink_tools", {})
+        assert _wait_until(lambda: "mcp__alpha__dynamic_echo" not in harness.registry.names(), 10.0)
+        assert "mcp__alpha__dynamic_echo" not in harness._system_content(None)
+
+        # The original, never-touched tool object survives the whole round trip unchanged.
+        assert harness.registry.get("mcp__alpha__add") is original_add
+    finally:
+        harness.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_list_changed_repeated_grow_is_stable():
+    """A second grow_tools (no-op re-list) never duplicates the tool or logs a collision."""
+    harness, manager = _harness_with("alpha", _notify_cfg())
+    try:
+        manager.call_tool("alpha", "grow_tools", {})
+        assert _wait_until(lambda: "mcp__alpha__dynamic_echo" in harness.registry.names(), 10.0)
+        manager.call_tool("alpha", "grow_tools", {})
+        # The second grow is a no-op re-list (same definition): no note is ever raised for it,
+        # so there is no positive signal to poll on — give it a generous window to land.
+        time.sleep(1.0)
+
+        assert sum(1 for n in harness.registry.names() if n == "mcp__alpha__dynamic_echo") == 1
+        joined = "\n".join(manager.notes)
+        assert "collision" not in joined
+        assert "already registered" not in joined
+    finally:
+        harness.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_progress_notifications_are_observed():
+    """SC3: real notifications/progress surface in MCPManager.last_progress and a live note."""
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", _notify_cfg(), timeout=30.0)
+        seq = manager.note_seq
+        manager.call_tool("alpha", "progress_steps", {"steps": 3})
+
+        assert _wait_until(
+            lambda: (
+                manager.last_progress("alpha") is not None
+                and manager.last_progress("alpha")[0] == 3.0
+            ),
+            10.0,
+        )
+        _, new = manager.notes_since(seq)
+        assert any("MCP server 'alpha': progress 3/3" in n for n in new)
+        # Progress notes are live-only (persistent=False): never in the startup-rendered list.
+        assert not any("progress" in n for n in manager.notes)
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_logging_notification_reaches_the_logger(caplog):
+    """SC3: a real notifications/message reaches agent86's Python logger."""
+    caplog.set_level(logging.WARNING, logger="agent86.tools.mcp_client")
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", _notify_cfg(), timeout=30.0)
+        manager.call_tool("alpha", "log_line", {"text": "disk low"})
+
+        assert _wait_until(lambda: any("disk low" in r.getMessage() for r in caplog.records), 10.0)
+        record = next(r for r in caplog.records if "disk low" in r.getMessage())
+        assert record.levelno == logging.WARNING
+        assert "MCP server 'alpha'" in record.getMessage()
+    finally:
+        manager.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_instructions_and_names_reach_the_system_message():
+    """SC1: InitializeResult.instructions and every mounted tool name reach the system message."""
+    harness, manager = _harness_with(
+        "alpha", _notify_cfg(instructions="Prefer shout for emphasis.")
+    )
+    try:
+        content = harness._system_content(None)
+        assert "Prefer shout for emphasis." in content
+        assert "Instructions from MCP server 'alpha'" in content
+        for tool in manager.tools_for("alpha"):
+            if harness.registry.get(tool.name) is not None:
+                assert tool.name in content
+        assert manager.server_instructions("alpha") == "Prefer shout for emphasis."
+    finally:
+        harness.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_no_instructions_means_no_instructions_block():
+    """No InitializeResult.instructions -> no instructions block, but the server still lists."""
+    harness, manager = _harness_with("alpha", _notify_cfg())
+    try:
+        content = harness._system_content(None)
+        assert "Instructions from MCP server 'alpha'" not in content
+        assert "- alpha: " in content
+    finally:
+        harness.close()
+
+
+@pytest.mark.skipif(not _HAS_MCP_SERVER, reason="requires the 'mcp' extra")
+def test_real_stdio_schema_deferral_end_to_end():
+    """SC1/SC2 end to end: a real ReAct turn over a real stdio session proves ADR 0003 — the
+    stub schema in request 0, the real schema (and its real cost) in request 1 of the same turn."""
+    provider = ScriptedProvider(
+        [
+            Completion(
+                text="",
+                tool_calls=[ToolCall(id="1", name="mcp__alpha__shout", arguments={"text": "hi"})],
+                usage=Usage(input_tokens=5, output_tokens=2),
+                stop_reason="tool_use",
+            ),
+            Completion(
+                text="done",
+                usage=Usage(input_tokens=6, output_tokens=1),
+                stop_reason="end_turn",
+            ),
+        ]
+    )
+    cfg = load_config()
+    cfg.guardrails.approval = ApprovalMode.AUTO  # shout is side-effecting; run non-interactively
+    harness = Harness(cfg, provider=provider, memory=None)
+    try:
+        manager = harness.ensure_mcp()
+        manager.start_server("alpha", _stdio_cfg(), timeout=30.0)
+        harness.add_mcp_server("alpha", _stdio_cfg())
+
+        list(harness.run_turn("go", harness.new_session()))
+
+        assert len(provider.requests) >= 2
+        req0, req1 = provider.requests[0], provider.requests[1]
+
+        spec0 = next(t for t in req0.tools if t.name == "mcp__alpha__shout")
+        assert spec0.parameters == {"type": "object", "properties": {}}
+        assert spec0.description.endswith(" [argument schema loads on first call]")
+
+        spec1 = next(t for t in req1.tools if t.name == "mcp__alpha__shout")
+        assert "text" in spec1.parameters["properties"]
+
+        assert "mcp__alpha__shout" in req0.messages[0].content
+
+        assert any("HI" in (m.content or "") for m in req1.messages)
+    finally:
+        harness.close()
