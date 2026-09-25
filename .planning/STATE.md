@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-25T03:13:03.091Z"
+last_updated: "2026-09-25T03:30:56.964Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 29
-  completed_plans: 27
+  completed_plans: 28
 ---
 
 # Project State
@@ -83,6 +83,44 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-25 — **Plan 14-05 complete (real-stdio proof of schema deferral and notification
+  routing, wave 4, SC1-SC3 all proven live):** Seven new tests in `tests/integration/
+  test_mcp_client.py` drive the real `live_mcp_server.py` fixture through a real `MCPManager`
+  and a real `Harness` — no fakes — closing this phase's own "real corpus, not just fakes"
+  precedent from plans 12-06/13-05. `test_real_stdio_list_changed_mounts_and_unmounts_through_
+  the_harness`: a mid-session `grow_tools` makes `mcp__alpha__dynamic_echo` appear in
+  `harness.registry.names()` and `harness._system_content(None)` with no restart, callable end
+  to end through `harness.registry.dispatch(...)`, with a note in `manager.notes` naming both
+  the change and the tool; `shrink_tools` removes it again; `mcp__alpha__add`'s object identity
+  survives the whole round trip unchanged. A companion test proves a repeated `grow_tools` is a
+  stable no-op with no duplicate and no collision note. `test_real_stdio_progress_notifications_
+  are_observed`: real `notifications/progress` land in `MCPManager.last_progress("alpha")` and a
+  live-only note, never the startup-rendered `notes` list. `test_real_stdio_logging_notification_
+  reaches_the_logger`: real `notifications/message` reaches `agent86.tools.mcp_client`'s Python
+  logger at `WARNING`, captured via `caplog` with no custom handler needed. Two instructions
+  tests prove a real `InitializeResult.instructions` string (and every mounted tool name) reach
+  `Harness._system_content`, and that no instructions means no instructions block. The
+  headline test, `test_real_stdio_schema_deferral_end_to_end`, drives a real `ScriptedProvider`
+  turn over a real stdio session and proves ADR 0003 SC1/SC2 together: request 0's
+  `mcp__alpha__shout` spec is the stub schema with the `" [argument schema loads on first
+  call]"` suffix; request 1 of the SAME turn already carries the real `text` property; the tool
+  result (`"HI"`) reaches the transcript. Per the orchestrator's honesty ruling, the instructions
+  test proves rendering against the CI fixture's own `instructions=` only — the live-corpus
+  citation (`server-everything@2026.8.31`) stays exactly what `14-EVIDENCE.md`'s own `Conclusion
+  for SC1` states, quoted verbatim in the SUMMARY, and is not restated or strengthened here. One
+  structural (not code) deviation: Tasks 1 and 2 landed as a single commit rather than two,
+  because Task 1's new imports (`ScriptedProvider`, `ApprovalMode`, `Completion`, `Usage`) are
+  unused until Task 2's schema-deferral test consumes them, which would fail `ruff check`'s
+  `F401` on a Task-1-only commit — the same category of split this phase's own 14-01/14-04
+  SUMMARYs already documented. No production code touched (`git status --porcelain src/` empty
+  throughout). Full suite green: `pytest -q` 1435 passed (up from 1428), 0 failed;
+  `pytest tests/integration/test_mcp_client.py tests/integration/test_mcp_live.py -q` 36 passed
+  on 3 consecutive runs; `ruff check .` and `mypy src/agent86` both clean.
+  `docs/mcp-conformance-matrix.md`/`ARCHITECTURE.md` §15/`CHANGELOG.md`/`REQUIREMENTS.md`
+  traceability updates (including marking MCP-20/MCP-24 complete) remain for this phase's own
+  signoff plan (14-06), matching this phase's own established sequencing (14-01/14-03/14-04
+  deferred the same updates for the same reason).
 
 - 2026-09-25 — **Plan 14-04 complete (route list_changed, progress, logging, and resource
   updates, wave 3, MCP-24 closed):** `_serve_once`'s `_on_message` no longer silently drops
@@ -1375,7 +1413,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
-Plan: 5 of 6
+Plan: 6 of 6
 Status: Ready to execute
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`

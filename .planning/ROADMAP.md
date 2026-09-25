@@ -288,7 +288,7 @@ Plans:
 - [x] 14-04-PLAN.md — `_on_message` routing: `list_changed` re-fetch through Phase 12's sync
   path, progress (token requested, observed generically), logging, resource updates (MCP-24)
   (wave 3)
-- [ ] 14-05-PLAN.md — real-stdio proof of SC1-SC3 through a real `Harness` (wave 4)
+- [x] 14-05-PLAN.md — real-stdio proof of SC1-SC3 through a real `Harness` (wave 4)
 - [ ] 14-06-PLAN.md — matrix re-ruling, ARCHITECTURE/CHANGELOG/README, validation sign-off, and
   human TUI check (wave 5)
 
@@ -381,7 +381,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 4/6 plans executed
+**Plans:** 5/6 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
