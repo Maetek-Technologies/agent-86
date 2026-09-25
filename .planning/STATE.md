@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: executing
-last_updated: "2026-09-25T03:30:56.964Z"
+status: verifying
+last_updated: "2026-09-25T12:38:19.377Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
-  completed_phases: 4
+  completed_phases: 5
   total_plans: 29
-  completed_plans: 28
+  completed_plans: 29
 ---
 
 # Project State
@@ -23,8 +23,8 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 14 — schema-deferral-and-notification-handling
-close.
+**Current focus:** Phase 14 — schema-deferral-and-notification-handling is plan-complete (6/6
+plans); awaiting the orchestrator's phase-gate and v1.1 milestone-close verification.
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
 deliverables — the client-side conformance matrix, the pinned server corpus, and at minimum four
 ADRs. v1.0 shipped as v1.0.0 and the harness remains complete against `docs/ARCHITECTURE.md`.
@@ -47,17 +47,22 @@ outranks MCP integration work.
 
 ## Milestone
 
-**v1.1 — MCP integration depth** (4/4 phases plan-complete; awaiting final phase-gate
-verification for Phase 13)
-4 phases (Phase 10 — MCP conformance audit; Phase 11 — resources and prompts become first-class;
+**v1.1 — MCP integration depth** (5/5 phases plan-complete; awaiting final phase-gate and
+milestone-close verification for Phase 14)
+5 phases (Phase 10 — MCP conformance audit; Phase 11 — resources and prompts become first-class;
 Phase 12 — fix the zombie-tool desync and add reconnect; Phase 13 — per-server timeouts, the
-result cap, and non-text content)
+result cap, and non-text content; Phase 14 — schema deferral and notification handling)
 
 Phase 10 was deliberately the only phase at milestone start: A/B/C could not be sized until the
 matrix ruled on them. It ruled 2026-09-23, so the implementation phases were promoted one at a
 time from `docs/mcp-conformance-audit-2026-09.md` § "Recommended phase breakdown". Phase 13 —
 per-server timeouts (MCP-21), the result cap (MCP-22) and non-text content rendering (MCP-25) —
-is now plan-complete (6/6 plans, 23/23 total plans across the milestone).
+completed 6/6 plans, 23/23 total plans across the milestone at the time. Phase 14 — schema
+deferral (MCP-20, ADR 0003) and notification handling (MCP-24: list_changed, progress, resource
+updates, logging) — is now plan-complete (6/6 plans, 29/29 total plans across the milestone),
+closing the v1.1 milestone's last written phase; the human checkpoint (a mid-session
+`tools/list_changed` mounting a new tool in a running TUI with no restart) was approved
+2026-09-25.
 
 Previous: **v1.0 — Release** — 1 phase, 9 requirements (OBS-01…OBS-04, PKG-01, PKG-02,
 HARD-01…HARD-03), complete, released as v1.0.0.
@@ -74,6 +79,7 @@ Before that: **v0.8 — Context & cost** — 1 phase, 7 requirements, released a
 | 11 — Resources and Prompts First-Class | ● | 4/4 | 100% |
 | 12 — Fix the Zombie-Tool Desync and Add Reconnect | ● | 8/8 | 100% |
 | 13 — Per-Server Timeouts, the Result Cap, and Non-Text Content | ● | 6/6 | 100% |
+| 14 — Schema Deferral and Notification Handling | ● | 6/6 | 100% |
 
 v1.0 (closed): 9 — Release ● n/a.
 v0.9 (closed): 8 — Coding-Agent UX ● n/a.
@@ -83,6 +89,36 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-25 — **Plan 14-06 complete (phase signoff — matrix/ARCHITECTURE re-ruling,
+  CHANGELOG/README, and human-verified live notifications, wave 5 — final plan, Phase 14 now
+  6/6 complete, MCP-20 and MCP-24 both closed, v1.1 milestone now 5/5 phases plan-complete):**
+  `docs/mcp-conformance-matrix.md` re-ruled `CAP-LIST-CHANGED`, `CAP-PROGRESS` and
+  `CAP-RESOURCE-SUBSCRIBE` `implemented`/`in`, `CAP-LOGGING` `partial`/`out`, and left
+  `CAP-CANCELLATION` `absent`/`out` with the new finding that the SDK's own dispatcher consumes
+  incoming `notifications/cancelled` before `message_handler` ever runs
+  (`mcp/client/session.py:1435-1437`), so notification routing cannot close it — the missing half
+  is send-side. No `CAP-SCHEMA-DEFERRAL` row was added; ADR 0003 stays the record of schema
+  deferral under "Not rated here". `docs/ARCHITECTURE.md` §7 gained schema-deferral and
+  notification-routing sentences; §15 dropped two Not-built rows and gained a departure
+  block-quote. `CHANGELOG.md`/`README.md` document MCP-20 (schema deferral) and MCP-24
+  (notification handling) as user-facing behavior, bounding the SC1 "server instructions" claim
+  exactly to `14-EVIDENCE.md`'s own Conclusion (server-everything sets instructions live; the CI
+  fixture proves rendering). `14-VALIDATION.md` was signed off against real results (`pytest -q`
+  1435 passed; `mypy`/`ruff` clean; docs-consistency 7 passed). **The Task 3 human checkpoint was
+  approved**: the user ran the six how-to-verify steps against a scratch config pointing at
+  `live_mcp_server.py` with `AGENT86_LIVE_MCP_NOTIFY_TOOLS=1` and a synthetic server-instructions
+  string on 2026-09-25 and replied verbatim "approved" — confirming a mid-session
+  `tools/list_changed` mounts `mcp__live__dynamic_echo` live in a running TUI with no restart, its
+  deferred schema materialises and becomes callable, and progress notes appear. No ADR touched
+  (`ls docs/adr/*.md` still 4, `git diff --stat docs/adr/` empty); no deviations.
+  `.planning/REQUIREMENTS.md` traceability rows for MCP-20/MCP-24 were added by hand (Phase 11/13
+  precedent) since `gsd-tools requirements mark-complete` only toggles existing checkboxes and
+  these two were still plain deferred bullets with none — now 21/25 v1.1 requirements mapped to a
+  phase, 4 remaining deferred (MCP-16..19, workstream B, unwritten). **Phase 14 is now complete:
+  6/6 plans, MCP-20 and MCP-24 both closed, human-verified live in the TUI — the v1.1 "MCP
+  Integration Depth" milestone's last written phase, now 5/5 phases plan-complete (29/29 total
+  plans) awaiting the orchestrator's own phase-gate and milestone-close verification.**
 
 - 2026-09-25 — **Plan 14-05 complete (real-stdio proof of schema deferral and notification
   routing, wave 4, SC1-SC3 all proven live):** Seven new tests in `tests/integration/
@@ -1414,7 +1450,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
 Plan: 6 of 6
-Status: Ready to execute
+Status: Phase complete — ready for verification
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
 Last activity: 2026-09-25

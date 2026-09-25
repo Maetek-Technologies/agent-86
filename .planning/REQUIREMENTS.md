@@ -94,16 +94,16 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 
 ### Workstream C — context and lifecycle (Tier 3/4)
 
-- **MCP-20**: Schema deferral, as ruled by MCP-10
+- [x] **MCP-20**: Schema deferral, as ruled by MCP-10 — Phase 14
 - **MCP-21**: Per-server configurable timeouts. Today they are hardcoded and asymmetric — 30 s
   connect, 120 s per tool call — and `MCPConfig` carries only `enabled`, so a slow legitimate
   server and a hung one are indistinguishable
 - **MCP-22**: A prompt-side result cap, as ruled by MCP-11
 - **MCP-23**: Reconnect after a dropped transport. There is no reconnect path at all today:
   `_serve` awaits `close_event`, and a dropped transport ends the task
-- **MCP-24**: `list_changed` handling. No `message_handler` is installed, so every server
+- [x] **MCP-24**: `list_changed` handling. No `message_handler` is installed, so every server
   notification is dropped and a server that changes its tool list mid-session is invisible until
-  restart — and `list_changed` is the mechanism `/config mcp`'s live mount already wants
+  restart — and `list_changed` is the mechanism `/config mcp`'s live mount already wants — Phase 14
 - **MCP-25**: Non-text content blocks handled. Only `.text` is read today; image, audio and
   embedded-resource blocks fall through to `str(chunk)`, so a base64 blob lands in the prompt
   verbatim
@@ -144,11 +144,13 @@ and how they are grouped into phases 11+ via `/gsd:add-phase`.
 | MCP-21 | Phase 13 | Complete |
 | MCP-22 | Phase 13 | Complete |
 | MCP-25 | Phase 13 | Complete |
+| MCP-20 | Phase 14 | Complete |
+| MCP-24 | Phase 14 | Complete |
 
 **Coverage:**
-- v1.1 requirements: 19 total (12 Phase 10 + 2 Phase 11 + 2 Phase 12 + 3 Phase 13 to date)
-- Mapped to phases: 19
-- Unmapped: 0 ✓ (the remaining deferred IDs — MCP-16…MCP-20, MCP-24 — stay
+- v1.1 requirements: 21 total (12 Phase 10 + 2 Phase 11 + 2 Phase 12 + 3 Phase 13 + 2 Phase 14 to date)
+- Mapped to phases: 21
+- Unmapped: 0 ✓ (the remaining deferred IDs — MCP-16…MCP-19 — stay
   intentionally unmapped until written into a future phase)
 
 Deferred requirements are intentionally unmapped — they are written into phases only after
@@ -156,4 +158,4 @@ scoped via `/gsd:add-phase`.
 
 ---
 *Requirements defined: 2026-09-22*
-*Last updated: 2026-09-24 after Phase 13 added (MCP-21, MCP-22, MCP-25)*
+*Last updated: 2026-09-25 after Phase 14 added (MCP-20, MCP-24)*

@@ -7,7 +7,8 @@
 - **v0.8 Context & Cost** — Phase 7 — shipped 2026-09-19
 - **v0.9 Coding-Agent UX** — Phase 8 — shipped 2026-09-21
 - **v1.0 Release** — Phase 9 — shipped 2026-09-21, published to PyPI
-- **v1.1 MCP Integration Depth** — Phases 10-13 — in progress (started 2026-09-22)
+- **v1.1 MCP Integration Depth** — Phases 10-14 — 5/5 phases plan-complete (started 2026-09-22),
+  awaiting milestone-close verification
 
 Full detail for v0.6-v1.0: [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP.md) ·
 requirements: [milestones/v1.0-REQUIREMENTS.md](milestones/v1.0-REQUIREMENTS.md) ·
@@ -35,7 +36,7 @@ GSD plans; each still carries a `SUMMARY.md` in `phases/`.
 
 </details>
 
-### v1.1 MCP Integration Depth (In Progress)
+### v1.1 MCP Integration Depth (5/5 phases plan-complete, awaiting milestone-close verification)
 
 **Milestone Goal:** Rule on the client half of the MCP spec — the conformance matrix, the pinned
 server corpus, and the four contract-touching ADRs — so the implementation phases (workstreams A,
@@ -63,7 +64,7 @@ implementation phases are now written from its recommended breakdown
  (completed 2026-09-24)
   configurable connect/call timeouts, ADR 0004's visible result cap, and real rendering of
   image/audio/embedded-resource blocks, closing MCP-21, MCP-22 and MCP-25
-- [ ] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas
+- [x] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas (completed 2026-09-25)
   deferred to first use per ADR 0003 (names stay up front), and server notifications routed so a
   mid-session `list_changed` re-fetches the tool list, closing MCP-20 and MCP-24
 
@@ -289,11 +290,8 @@ Plans:
   path, progress (token requested, observed generically), logging, resource updates (MCP-24)
   (wave 3)
 - [x] 14-05-PLAN.md — real-stdio proof of SC1-SC3 through a real `Harness` (wave 4)
-- [ ] 14-06-PLAN.md — matrix re-ruling, ARCHITECTURE/CHANGELOG/README, validation sign-off, and
+- [x] 14-06-PLAN.md — matrix re-ruling, ARCHITECTURE/CHANGELOG/README, validation sign-off, and
   human TUI check (wave 5)
-
-Plans:
-- [ ] TBD (run /gsd:plan-phase 14 to break down)
 
 ## Next
 
@@ -333,8 +331,19 @@ blocks render as named markers, and `CAP-CONTENT-BLOCKS` is now `implemented`. A
 `mcp-server-git`'s `git_show` recorded as the accepted risk (no narrowing argument; raise the
 per-server cap). Also fixed: mcp 2.0's `is_error` rename had silently dropped the `ERROR:` prefix.
 
-**Phase 14 — Schema deferral and notification handling — is next** (not yet planned): workstream
-C's last phase, MCP-20 and MCP-24. Plan it with `/gsd:plan-phase 14`.
+**Phase 14 — Schema deferral and notification handling — is complete** (6/6 plans, 2026-09-25):
+workstream C's last phase, MCP-20 and MCP-24. MCP tool schemas defer to first use per ADR 0003
+(names and server instructions stay in the system message every request; the argument schema
+materialises on first execution and its cost is already reflected in the same turn's next
+request); `notifications/tools/list_changed` (and the resources/prompts siblings) re-fetch a
+server's tool list into the live registry with no restart, progress is requested on every call and
+shown as a throttled live note, subscribed-resource updates surface as a live note, and log
+messages reach agent86's own logger. `CAP-LIST-CHANGED`, `CAP-PROGRESS` and `CAP-RESOURCE-SUBSCRIBE`
+are now `implemented`; `CAP-LOGGING` moved to `partial`; `CAP-CANCELLATION` stays `absent` — the
+SDK's own dispatcher consumes incoming cancellations before agent86's code ever sees them, so
+notification routing cannot close it. A human confirmed live in the TUI (approved 2026-09-25) that
+a mid-session `list_changed` mounts a new tool with no restart. **This closes the v1.1 "MCP
+Integration Depth" milestone's last written phase: 5/5 phases, 29/29 plans complete.**
 
 Phases 15+ remain **unwritten by design** and are promoted one at a time from the audit's
 recommended breakdown via `/gsd:add-phase`: OAuth discovery/authorization and token refresh
@@ -381,7 +390,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 5/6 plans executed
+**Plans:** 6/6 plans complete
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
