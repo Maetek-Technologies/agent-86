@@ -36,7 +36,7 @@ GSD plans; each still carries a `SUMMARY.md` in `phases/`.
 
 </details>
 
-### v1.1 MCP Integration Depth (5/6 phases complete; Phase 15 not yet planned)
+### v1.1 MCP Integration Depth (5/6 phases complete; Phase 15 planned)
 
 **Milestone Goal:** Rule on the client half of the MCP spec — the conformance matrix, the pinned
 server corpus, and the four contract-touching ADRs — so the implementation phases (workstreams A,
@@ -64,7 +64,8 @@ implementation phases are now written from its recommended breakdown
  (completed 2026-09-24)
   configurable connect/call timeouts, ADR 0004's visible result cap, and real rendering of
   image/audio/embedded-resource blocks, closing MCP-21, MCP-22 and MCP-25
-- [x] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas (completed 2026-09-25)
+- [x] **Phase 14: Schema deferral and notification handling** - Workstream C: MCP tool schemas
+ (completed 2026-09-25)
   deferred to first use per ADR 0003 (names stay up front), and server notifications routed so a
   mid-session `list_changed` re-fetches the tool list, closing MCP-20 and MCP-24
 - [ ] **Phase 15: Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization** -
@@ -325,10 +326,27 @@ phase's first plan must begin by doing so before any implementation is written. 
 stays optional; no new core dependency; tokens never touch config TOML.
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 13 (renumbered 15 on promotion)
-**Plans**: 0 plans
+**Plans**: 7 plans
 
 Plans:
-- [ ] TBD (run /gsd:plan-phase 15 to break down)
+- [ ] 15-01-PLAN.md — live spike first: human registers a GitHub OAuth App, raw SDK
+  `OAuthClientProvider` round trip against `api.githubcopilot.com/mcp/`, findings F1-F10 ruled in
+  `15-EVIDENCE.md` (wave 1, checkpoint)
+- [ ] 15-02-PLAN.md — config surface: `auth = "oauth"`, `oauth_client_id`,
+  `oauth_client_secret_env` (reference only), scopes/port/timeout; widened write-back guard;
+  GitHub token shapes in `redact()` (wave 2)
+- [ ] 15-03-PLAN.md — `tools/mcp_oauth.py` (TDD): pre-seeded in-memory `TokenStorage` (no DCR),
+  fixed-port loopback callback, browser redirect, scope override, `Accept: application/json`
+  wrapper (wave 2)
+- [ ] 15-04-PLAN.md — wiring: `_streamable_http(auth=)` via `_HTTP_AUTH` ContextVar, per-server
+  storage, secret resolution, OAuth connect budget, named redacted failures, TUI test budget
+  (wave 3)
+- [ ] 15-05-PLAN.md — offline proof: GitHub-shaped mock AS + protected MCP fixture driven by a
+  real `MCPManager`; no-leak, denial, missing-secret, restart, redirect-mismatch cases (wave 4)
+- [ ] 15-06-PLAN.md — live `agent86 mcp tools` against GitHub, SC3 credential sweep, human TUI
+  check (wave 5, checkpoint)
+- [ ] 15-07-PLAN.md — signoff: CAP-OAUTH `absent` → `partial`, ARCHITECTURE/CHANGELOG/README,
+  validation sign-off (wave 6)
 
 ## Next
 
