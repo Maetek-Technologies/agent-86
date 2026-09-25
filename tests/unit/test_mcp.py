@@ -2074,3 +2074,109 @@ def test_call_tool_images_are_never_inlined_even_under_cap(monkeypatch):
         assert data not in out
     finally:
         manager.close()
+
+
+# --- Plan 14-03: server instructions capture + prompt_catalog ------------------------------- #
+
+
+def test_instructions_captured_per_server(monkeypatch):
+    _DyingTransport([_Up([_fake_tool("a")], instructions="Prefer a.")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert manager.server_instructions("alpha") == "Prefer a."
+        catalog = manager.prompt_catalog()
+        assert len(catalog) == 1
+        server, tools, instructions = catalog[0]
+        assert server == "alpha"
+        assert [t.name for t in tools] == ["mcp__alpha__a"]
+        assert instructions == "Prefer a."
+    finally:
+        manager.close()
+
+
+def test_instructions_blank_is_none(monkeypatch):
+    _DyingTransport([_Up([_fake_tool("a")], instructions="   ")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert manager.server_instructions("alpha") is None
+    finally:
+        manager.close()
+
+
+def test_instructions_absent_when_initialize_returns_none(monkeypatch):
+    _install_fake_transport(monkeypatch, [_fake_tool("a")])
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert manager.server_instructions("alpha") is None
+    finally:
+        manager.close()
+
+
+def test_instructions_cleared_on_stop_and_death(monkeypatch):
+    _DyingTransport([_Up([_fake_tool("a")], instructions="x")]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert manager.server_instructions("alpha") == "x"
+        manager.stop_server("alpha")
+        assert manager.server_instructions("alpha") is None
+        assert "alpha" not in [s for s, _, _ in manager.prompt_catalog()]
+    finally:
+        manager.close()
+
+    import agent86.tools.mcp_client as mcp_client
+
+    monkeypatch.setattr(mcp_client, "_MAX_RECONNECT_ATTEMPTS", 0)
+    transport = _DyingTransport(
+        [_Up([_fake_tool("a")], instructions="x"), ConnectionError("down")]
+    ).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert manager.server_instructions("alpha") == "x"
+        transport.kill(manager)
+        assert _wait_until(lambda: "alpha" not in manager._sessions)
+        assert manager.server_instructions("alpha") is None
+    finally:
+        manager.close()
+
+
+def test_prompt_catalog_sorted_by_server(monkeypatch):
+    _install_fake_transport(monkeypatch, [_fake_tool("z")])
+    manager = MCPManager({})
+    try:
+        manager.start_server("zeta", MCPServerConfig(command="x"))
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        assert [s for s, _, _ in manager.prompt_catalog()] == ["alpha", "zeta"]
+    finally:
+        manager.close()
+
+
+def test_prompt_catalog_feeds_the_system_message(monkeypatch):
+    from agent86.config import load_config
+    from agent86.orchestration.loop import Harness
+    from tests.support import TextProvider
+
+    harness = Harness(load_config(), provider=TextProvider("hi"), memory=None)
+    manager = harness.ensure_mcp()
+    _DyingTransport(
+        [_Up([_fake_tool("a", schema={"type": "object", "properties": {"q": {"type": "string"}}})],
+             instructions="Prefer a.")]
+    ).install(monkeypatch)
+    cfg = MCPServerConfig(command="x")
+    try:
+        manager.start_server("alpha", cfg)
+        harness.add_mcp_server("alpha", cfg)
+
+        content = harness._system_content(None)
+        assert "- alpha: mcp__alpha__a" in content
+        assert "Prefer a." in content
+
+        tool = harness.registry.get("mcp__alpha__a")
+        assert tool is not None
+        assert tool.spec().parameters == {"type": "object", "properties": {}}
+    finally:
+        manager.close()

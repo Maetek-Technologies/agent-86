@@ -7,11 +7,19 @@ proof.
 
 from __future__ import annotations
 
+import inspect
+from collections.abc import Iterator
+from typing import Any
+
 from agent86.cognitive.anthropic_provider import AnthropicProvider
+from agent86.cognitive.base import ModelProvider
 from agent86.cognitive.ollama_provider import OllamaProvider
 from agent86.cognitive.openai_provider import OpenAIProvider
+from agent86.config import load_config
+from agent86.memory.working import count_spec_tokens
+from agent86.orchestration.loop import Harness
 from agent86.tools.mcp_client import MCPListResourcesTool, MCPTool
-from agent86.types import ToolCall, ToolSpec
+from agent86.types import Completion, CompletionDelta, CompletionRequest, ToolCall, ToolSpec, Usage
 
 
 class _RecordingManager:
@@ -139,3 +147,85 @@ def test_mcp_stub_schema_ollama_shape():
     tool.run(ToolCall(id="1", name=tool.name, arguments={"query": "q"}), ctx=None)
     wire2 = OllamaProvider._to_tools([tool.spec()])
     assert wire2[0]["function"]["parameters"] == _SCHEMA
+
+
+# --- Task 2: the same-turn budget proof (ADR 0003 SC2, RESEARCH Pitfall 4) ------------------- #
+
+
+class _BudgetRecordingProvider(ModelProvider):
+    """Records every request plus the budget resolved for it; drives one tool_use, then text."""
+
+    name = "anthropic"
+
+    def __init__(self, model: str = "claude-opus-4-8"):
+        self.model = model
+        self.calls: list[tuple[CompletionRequest, int]] = []
+        self.harness: Any = None  # set by the test after the Harness exists
+
+    def stream(self, request: CompletionRequest) -> Iterator[CompletionDelta]:
+        self.calls.append((request, self.harness.working.max_tokens))
+        if len(self.calls) == 1:
+            yield CompletionDelta(
+                done=True,
+                completion=Completion(
+                    text="",
+                    tool_calls=[
+                        ToolCall(id="1", name="mcp__alpha__search", arguments={"query": "q"})
+                    ],
+                    usage=Usage(input_tokens=5, output_tokens=2),
+                    model=self.model,
+                    stop_reason="tool_use",
+                ),
+            )
+        else:
+            yield CompletionDelta(text="done")
+            yield CompletionDelta(
+                done=True,
+                completion=Completion(
+                    text="done",
+                    usage=Usage(input_tokens=6, output_tokens=1),
+                    model=self.model,
+                    stop_reason="end_turn",
+                ),
+            )
+
+
+def test_budget_shrinks_in_the_step_that_materialises():
+    provider = _BudgetRecordingProvider()
+    harness = Harness(load_config(), provider=provider, memory=None)
+    provider.harness = harness
+
+    manager = _RecordingManager()
+    big_schema = {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string", "description": "x" * 2000},
+            "limit": {"type": "integer"},
+        },
+        "required": ["query"],
+    }
+    # read_only=True: side_effecting stays False, so the approval gate never blocks this test.
+    tool = MCPTool(manager, "alpha", "search", "Search", big_schema, read_only=True)
+    harness.registry.register(tool)
+
+    list(harness.run_turn("go", harness.new_session()))
+
+    assert len(provider.calls) == 2
+    (req0, budget0), (req1, budget1) = provider.calls
+
+    def spec_for(req: CompletionRequest) -> ToolSpec:
+        return next(s for s in req.tools if s.name == "mcp__alpha__search")
+
+    assert spec_for(req0).parameters == {"type": "object", "properties": {}}
+    assert spec_for(req1).parameters == big_schema
+
+    delta = count_spec_tokens(req1.tools) - count_spec_tokens(req0.tools)
+    assert delta > 0
+    assert budget0 - budget1 == delta
+    assert manager.calls == [("alpha", "search", {"query": "q"})]
+
+
+def test_budget_hook_unchanged():
+    sig = inspect.signature(Harness._context_budget)
+    assert list(sig.parameters) == ["self", "system_content", "specs"]
+    assert inspect.getsource(Harness).count("self._context_budget(") == 2

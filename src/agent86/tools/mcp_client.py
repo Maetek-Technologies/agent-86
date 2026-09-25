@@ -744,6 +744,8 @@ class MCPManager:
         self._note_seq = 0
         self._note_events: deque[tuple[int, str]] = deque(maxlen=_NOTE_EVENT_LIMIT)
         self._note_listeners: list[Callable[[str], None]] = []
+        #: name -> InitializeResult.instructions (ADR 0003's "plus server instructions" clause).
+        self._instructions: dict[str, str | None] = {}
 
     def _add_note(self, message: str) -> None:
         """Record a degradation without erasing the previous one.
@@ -1008,7 +1010,7 @@ class MCPManager:
                 session = await stack.enter_async_context(
                     ClientSession(read, write, message_handler=_on_message)
                 )
-                await session.initialize()
+                init_result = await session.initialize()
                 listed = await session.list_tools()
                 tools = [
                     MCPTool(
@@ -1028,6 +1030,10 @@ class MCPManager:
                 # property (an older SDK, or a test fake) degrades to "no synthetic tools".
                 tools.extend(
                     _capability_tools(self, name, getattr(session, "server_capabilities", None))
+                )
+                raw = getattr(init_result, "instructions", None)
+                self._instructions[name] = (
+                    raw.strip() if isinstance(raw, str) and raw.strip() else None
                 )
                 self._sessions[name] = session
                 self._server_tools[name] = tools
@@ -1074,6 +1080,7 @@ class MCPManager:
             # SC1: both dicts cleared in the same place, on every exit path.
             self._sessions.pop(name, None)
             self._server_tools.pop(name, None)
+            self._instructions.pop(name, None)
             if dropped_cause is not None:
                 # Set HERE, atomically with the two pops above — not left for `_serve`'s later
                 # `_on_drop` call — so a caller on another thread that polls `_sessions` (or
@@ -1181,6 +1188,7 @@ class MCPManager:
         close_event = self._close_events.pop(name, None)
         task = self._tasks.pop(name, None)
         self._server_tools.pop(name, None)
+        self._instructions.pop(name, None)
         self._server_state.pop(name, None)
         self._disconnect_cause.pop(name, None)
         self._reconnect_attempt.pop(name, None)
@@ -1205,6 +1213,20 @@ class MCPManager:
         # A snapshot: the loop thread mutates _server_tools asynchronously, and iterating the
         # live dict from the main thread could raise "dictionary changed size during iteration".
         return [tool for tools in list(self._server_tools.values()) for tool in tools]
+
+    def server_instructions(self, name: str) -> str | None:
+        """The connected server's ``InitializeResult.instructions`` (ADR 0003), else None."""
+        return self._instructions.get(name)
+
+    def prompt_catalog(self) -> list[tuple[str, list[Tool], str | None]]:
+        """``(server, tools, instructions)`` for every server with a live tool list, by name.
+
+        Consumed by ``Harness._mcp_prompt_section`` every request so the system message always
+        names every callable MCP tool, deferred schema or not (ADR 0003). A snapshot — the loop
+        thread mutates these dicts concurrently.
+        """
+        snapshot = sorted(list(self._server_tools.items()), key=lambda item: item[0])
+        return [(name, list(tools), self._instructions.get(name)) for name, tools in snapshot]
 
     def start(self) -> None:
         if self._started or not self.servers:
