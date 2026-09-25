@@ -477,15 +477,27 @@ number v0.7 existed to remove.
    `list_dir`, `web_fetch`, `python_exec`, plus `remember`/`recall`, `use_skill`, and
    `delegate`. (A `web_search` tool is *not* implemented — see §15.)
 2. **MCP client** — connect to MCP servers (stdio/HTTP); their tools are registered
-   into the same registry with the same schema/guardrail treatment. A mounted server's
+   into the same registry with the same schema/guardrail treatment. Per ADR 0003, a mounted MCP
+   tool's name is always in the system message on every request, alongside its server's
+   `instructions` when it sets any; the tool's own argument schema stays a stub
+   (`{"type": "object", "properties": {}}`) until the harness actually runs it once, whereupon it
+   materialises for the rest of the session and the very next request of that same turn already
+   budgets for the real schema (schema deferral, MCP-20). A mounted server's
    **resources, prompt templates and argument completions** are mounted as additional per-server
    tools too (`mcp__{server}__list_resources`, `read_resource`, `list_resource_templates`,
    `subscribe_resource`, `unsubscribe_resource`, `list_prompts`, `get_prompt`, `complete`), gated
    on the capabilities the server itself advertised at `initialize()` — a server that declares
    none of them contributes none of those tools. A server that dies mid-session has its tools
    unregistered from the registry the moment its transport's read stream ends — the manager
-   watches for end-of-stream, not a failed call; `message_handler` is installed but server
-   notifications are still dropped (MCP-24) — and every error afterward names the server. A
+   watches for end-of-stream, not a failed call — and every error afterward names the server.
+   Server notifications are routed live (MCP-24): `tools/list_changed` (and its resources/prompts
+   siblings) re-fetches the server's tool list into the registry with no restart, keeping an
+   unchanged tool's identity (and its materialised flag) across the re-list; progress is
+   requested on every `tools/call` and observed generically as a throttled live note, never
+   attributed to a specific call; a subscribed resource's update notification surfaces as a live
+   note naming the URI; server log messages reach agent86's own Python logger, never
+   `logging/setLevel`, never the transcript; an incoming `notifications/cancelled` is consumed by
+   the SDK's own dispatcher before agent86's code ever sees it, so it stays unhandled. A
    dropped transport is retried up to 5 times with exponential backoff before the server is
    reported disconnected. A disconnect/reconnect note reaches the TUI transcript and `--plain`
    live via a push-hook listener — not only at startup — and `/tools` names every non-connected
@@ -1173,6 +1185,19 @@ that sweep — four to `implemented` and `CAP-RESOURCE-SUBSCRIBE` to `partial`, 
 **Described above as design intent, deliberately not implemented yet.** Each is marked *not
 built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 
+> Two rows left this table in v1.1's Phase 14: MCP client progress notifications
+> (`CAP-PROGRESS`) and `list_changed` notifications (`CAP-LIST-CHANGED`) — progress is requested on
+> every `tools/call` and observed generically as a throttled live note, never attributed to a
+> specific call, and `tools/list_changed` (with its resources/prompts siblings) re-fetches a
+> server's tool list into the registry live, with no restart (`docs/mcp-conformance-matrix.md`).
+> `CAP-RESOURCE-SUBSCRIBE` moved from `partial` to `implemented`: a subscribed resource's update
+> notification now surfaces as a live note, closing the half Phase 11 left open. `CAP-LOGGING`
+> moved from `absent` to `partial` — server log messages now reach agent86's own Python logger —
+> but stays a non-goal below: `logging/setLevel` is never sent, log lines never reach the
+> transcript, and the capability itself is deprecated as of `2026-07-28` (SEP-2577).
+> `CAP-CANCELLATION` stays `absent`: Phase 14 confirmed the SDK's own dispatcher consumes an
+> incoming `notifications/cancelled` before `message_handler` is ever called, so notification
+> routing cannot close it — the unbuilt half is send-side, client-initiated cancel forwarding.
 > Five rows left this table in v1.1's Phase 11: MCP client resources (`CAP-RESOURCES`), resource
 > templates (`CAP-RESOURCE-TEMPLATES`), resource subscriptions (`CAP-RESOURCE-SUBSCRIBE`),
 > prompts (`CAP-PROMPTS`) and completion (`CAP-COMPLETION`) — `list_resources`, `read_resource`,
@@ -1181,7 +1206,7 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 > (`docs/mcp-conformance-matrix.md`). One thing did not ship with them: the resource-update
 > notification a subscription exists to deliver is still dropped for lack of a `message_handler`,
 > so `CAP-RESOURCE-SUBSCRIBE` moved to `partial` rather than `implemented` — that remaining half
-> is MCP-24, workstream C.
+> is MCP-24, workstream C — closed by Phase 14.
 > Three rows left this table in v1.0, all of them §9 observability: a configured OTel exporter
 > (the tracer now owns a `TracerProvider` with a `BatchSpanProcessor`, rather than handing spans
 > to the no-op global provider), flight-recorder **redaction**, and flight-recorder **rotation**.
@@ -1214,11 +1239,9 @@ built* at its section; the full list with analysis is in `docs/BACKLOG.md`.
 | MCP client sampling (`CAP-SAMPLING`) — opt-in per server, deferred until a realistic corpus server demands it | §7 tools | matrix; MCP-16 |
 | MCP client elicitation (`CAP-ELICITATION`) — opt-in per server, deferred pending four preconditions | §7 tools | matrix; MCP-16 |
 | MCP client roots (`CAP-ROOTS`) — correctly declared absent, and the spec itself deprecates the capability in `2026-07-28` | §7 tools | matrix; MCP-16 |
-| MCP client logging (`CAP-LOGGING`) — only the conformance instrument exercises it | §9 observability | matrix |
-| MCP client progress notifications (`CAP-PROGRESS`) — agent86 can trigger a long-running operation but cannot observe its progress | §7 tools | matrix; MCP-24 |
+| MCP client logging (`CAP-LOGGING`) — received and logged since Phase 14; `logging/setLevel` never sent | §9 observability | matrix |
 | MCP client cancellation (`CAP-CANCELLATION`) — no corpus server's workflow depends on it | §7 tools | matrix |
 | MCP client pagination (`CAP-PAGINATION`) — a latent risk, not yet demonstrated by any corpus server | §7 tools | matrix |
 | MCP client `ping` (`CAP-PING`) — no corpus server needs a liveness probe; the transports already fail loudly | §7 tools | matrix |
-| MCP client `list_changed` notifications (`CAP-LIST-CHANGED`) — every server notification is dropped for lack of a `message_handler` | §7 tools | matrix; MCP-24 |
 | MCP client `_meta` on requests, responses and notifications (`CAP-META`) — SDK-internal plumbing, not a client-code gap | §7 tools | matrix |
 | MCP client OAuth 2.0 for remote servers (`CAP-OAUTH`) — auth today is `headers` plus `${VAR}` only; GitHub's hosted server is the named demand signal | §7 tools | matrix; MCP-17 |
