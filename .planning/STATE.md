@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: verifying
-last_updated: "2026-09-25T12:38:19.377Z"
+last_updated: "2026-09-25T12:48:54.282Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
@@ -1448,8 +1448,8 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
-Plan: 6 of 6
+Phase: 14
+Plan: Not started
 Status: Phase complete — ready for verification
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
