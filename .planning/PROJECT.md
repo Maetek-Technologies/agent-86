@@ -69,7 +69,21 @@ and image/audio/embedded-resource/resource-link blocks render as named markers v
 fixed: mcp 2.0 renamed `isError` to `is_error`, so server errors had lost their `ERROR:` prefix.
 1367 tests green.
 
-Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-20, MCP-24).
+**Phase 14 complete (2026-09-25)** — schema deferral and notification handling (MCP-20, MCP-24).
+Per ADR 0003, an `MCPTool` with arguments advertises its name with a stub schema until its first
+run, then materialises the real one inside the same turn (`_context_budget` unchanged — the
+per-request recomputation already covers it); every mounted server's tool names and its
+`InitializeResult.instructions` (capped, labelled untrusted) ride a per-request MCP section of the
+system message, shared with sub-agents. `_on_message` now routes `tools/list_changed` (and the
+resources/prompts siblings) into a guarded, identity-preserving re-fetch that cannot resurrect a
+stopped or dead server; progress is requested via a no-op `progress_callback` and observed
+generically, logging reaches the Python logger, resource updates become live notes. Matrix:
+`CAP-LIST-CHANGED`/`CAP-PROGRESS`/`CAP-RESOURCE-SUBSCRIBE` → `implemented`, `CAP-LOGGING` →
+`partial`, `CAP-CANCELLATION` stays `absent` (the SDK consumes it before `message_handler`). Live
+evidence (`14-EVIDENCE.md`): only `server-everything` sets instructions. TUI mid-session tool-list
+change human-verified. 1435 tests green.
+
+Next: `/gsd:add-phase` for the remaining proposed phases (MCP-16…MCP-19).
 
 **Target features:**
 
@@ -383,6 +397,12 @@ without hand-editing TOML or restarting.
   cap, and non-text content
 - ✓ **MCP-25**: **Non-text content blocks rendered, never repr'd** — named markers, no base64 in
   the prompt — Validated in Phase 13: Per-server timeouts, the result cap, and non-text content
+- ✓ **MCP-20**: **MCP tool schemas deferred to first use, names never** — stub schema until first
+  run, same-turn materialisation, names plus server instructions in the system message per ADR
+  0003 — Validated in Phase 14: Schema deferral and notification handling
+- ✓ **MCP-24**: **Server notifications reach something other than a no-op** — `list_changed`
+  re-fetches the tool list live, progress/logging/resource-updated routed — Validated in Phase 14:
+  Schema deferral and notification handling
 
 ### Active
 
@@ -533,4 +553,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-09-24 — Phase 13 (Per-server timeouts, the result cap, and non-text content) complete.*
+*Last updated: 2026-09-25 — Phase 14 (Schema deferral and notification handling) complete.*
