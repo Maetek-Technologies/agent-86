@@ -53,7 +53,7 @@ Filled in by the planner/executor against the task IDs in the PLAN.md files. Req
 | 14-05-02 | 05 | 4 | MCP-20 (SC1/SC2 real stdio) | integration | `pytest tests/integration/test_mcp_client.py -q -k "instructions or schema_deferral"` — 3 passed, 29 deselected | ✅ | ✅ green |
 | 14-06-01 | 06 | 5 | docs consistency (no new ADR, no CAP-SCHEMA-DEFERRAL row) | unit | `pytest tests/unit/test_docs_consistency.py -q` — 7 passed | ✅ | ✅ green |
 | 14-06-02 | 06 | 5 | phase gate + `run --json` additive-only | full | `pytest -q` — 1435 passed, 14 deselected; `mypy src/agent86` — no issues (94 files); `ruff check .` — all checks passed; `pytest tests/integration/test_mcp_client.py tests/integration/test_mcp_live.py tests/integration/test_scripting_contract.py -q` — 55 passed | ✅ | ✅ green |
-| 14-06-03 | 06 | 5 | MCP-24 (SC3 TUI) | manual checkpoint | human-verify (see Manual-Only Verifications) | n/a | ⬜ pending human checkpoint |
+| 14-06-03 | 06 | 5 | MCP-24 (SC3 TUI) | manual checkpoint | human-verify (see Manual-Only Verifications) — user ran the six how-to-verify steps against the CI fixture with `AGENT86_LIVE_MCP_NOTIFY_TOOLS=1` and `AGENT86_LIVE_MCP_INSTRUCTIONS="Prefer shout for emphasis."` on 2026-09-25 and replied "approved" | ✅ | ✅ green |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -85,4 +85,4 @@ Filled in by the planner/executor against the task IDs in the PLAN.md files. Req
 - [x] Feedback latency < 90s
 - [x] `nyquist_compliant` set to `true` in frontmatter
 
-**Approval:** pending human checkpoint (14-06-03)
+**Approval:** approved 2026-09-25
