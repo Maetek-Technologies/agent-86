@@ -119,6 +119,17 @@ def _deferred_schema() -> dict[str, Any]:
     return {"type": "object", "properties": {}}
 
 
+#: MCP-24: server-supplied text in any note is whitespace-flattened and clipped to this many
+#: characters — a chatty server must not blow out the transcript or the bounded note-event log.
+_NOTIFICATION_TEXT_MAX = 200
+
+
+def _clip(text: str, limit: int = _NOTIFICATION_TEXT_MAX) -> str:
+    """Server-supplied text for a note: one line, bounded."""
+    flat = " ".join(str(text).split())
+    return flat if len(flat) <= limit else flat[: limit - 1] + "…"
+
+
 def _missing_required(schema: dict, arguments: Any) -> list[str]:
     """The schema's ``required`` keys absent from ``arguments``. Never raises."""
     required = schema.get("required") if isinstance(schema, dict) else None
@@ -746,8 +757,11 @@ class MCPManager:
         self._note_listeners: list[Callable[[str], None]] = []
         #: name -> InitializeResult.instructions (ADR 0003's "plus server instructions" clause).
         self._instructions: dict[str, str | None] = {}
+        #: name -> asyncio.Lock, created on the loop thread on first use (MCP-24): serializes
+        #: back-to-back list_changed refetches for one server so they never interleave.
+        self._refetch_locks: dict[str, asyncio.Lock] = {}
 
-    def _add_note(self, message: str) -> None:
+    def _add_note(self, message: str, *, persistent: bool = True) -> None:
         """Record a degradation without erasing the previous one.
 
         Runs on whichever thread added the note — usually the MCP loop thread (`_serve`,
@@ -760,11 +774,16 @@ class MCPManager:
         depend on it seeing each distinct message once). The event log behind `notes_since`
         does NOT dedup — every call appends and fires listeners, so a repeat outage (the same
         "reconnecting (attempt 1 of N)" text twice) is never swallowed.
+
+        `persistent=False` is for live-only events (progress, resource updates, resource/prompt
+        list changes): delivered to listeners and `notes_since`, never added to the startup-
+        rendered `notes`, which would otherwise grow without bound.
         """
         with self._notes_lock:
-            if message not in self.notes:
-                self.notes.append(message)
-            self.note = "\n".join(self.notes)
+            if persistent:
+                if message not in self.notes:
+                    self.notes.append(message)
+                self.note = "\n".join(self.notes)
             self._note_seq += 1
             self._note_events.append((self._note_seq, message))
             listeners = list(self._note_listeners)
@@ -861,6 +880,98 @@ class MCPManager:
             self.on_tools_changed(name, removed, added)
         except Exception as exc:  # noqa: BLE001 - a listener failure must not wedge the manager
             self._add_note(f"MCP server '{name}': tool-registry update failed: {exc}")
+
+    async def _on_notification(self, name: str, session: Any, message: Any) -> None:
+        """MCP-24's notification router.
+
+        Runs on the MCP loop thread, inside a task the SDK spawned per notification — awaiting
+        ``session.list_tools()`` here cannot deadlock the reader (research: "inline await is
+        safe"). Never raises; the caller (`_on_message`) already wraps this in a try/except as a
+        second backstop.
+        """
+        try:
+            import mcp.types as mcp_types
+        except ImportError:
+            return
+        if isinstance(message, mcp_types.ToolListChangedNotification):
+            await self._refetch_tools(name, session, "tools/list_changed")
+        elif isinstance(
+            message,
+            (mcp_types.ResourceListChangedNotification, mcp_types.PromptListChangedNotification),
+        ):
+            kind = (
+                "resource"
+                if isinstance(message, mcp_types.ResourceListChangedNotification)
+                else "prompt"
+            )
+            self._add_note(f"MCP server '{name}': its {kind} list changed.", persistent=False)
+            await self._refetch_tools(name, session, f"{kind}s/list_changed")
+        else:
+            # notifications/cancelled never reaches here (consumed by the SDK's dispatcher
+            # before message_handler is called: mcp/client/session.py) — nothing to route.
+            # Task 2 (14-04) adds progress/logging/resource-updated branches here.
+            logger.debug(
+                "MCP server %r: notification %s not routed", name, type(message).__name__
+            )
+
+    async def _refetch_tools(self, name: str, session: Any, reason: str) -> None:
+        """Re-list one server's tools after a list_changed notification (MCP-24). Never raises.
+
+        Re-runs ``list_tools()`` only: capabilities are fixed for a session, so the synthetic
+        capability tools are reused. An unchanged tool keeps its object (and its ADR 0003
+        materialised flag). Writes only while ``session`` is still this server's live session,
+        so a notification racing stop_server()/a death can never resurrect it (Pitfall 2).
+        """
+        lock = self._refetch_locks.setdefault(name, asyncio.Lock())
+        async with lock:
+            try:
+                listed = await session.list_tools()
+                fresh = list(listed.tools)
+            except Exception as exc:  # noqa: BLE001
+                if self._sessions.get(name) is session:
+                    self._add_note(
+                        f"MCP server '{name}': re-listing tools after {reason} failed: "
+                        f"{_describe(exc)}"
+                    )
+                return
+            if self._sessions.get(name) is not session:
+                return
+            old = self._server_tools.get(name, [])
+            old_remote = {t._tool: t for t in old if isinstance(t, MCPTool)}
+            capability = [t for t in old if not isinstance(t, MCPTool)]
+            remote: list[Tool] = []
+            for t in fresh:
+                definition = (
+                    t.description or "",
+                    _tool_schema(t) or {"type": "object", "properties": {}},
+                    _is_read_only(t),
+                )
+                prev = old_remote.get(t.name)
+                if prev is not None and prev._definition == definition:
+                    remote.append(prev)
+                else:
+                    remote.append(
+                        MCPTool(
+                            self,
+                            name,
+                            t.name,
+                            t.description or "",
+                            _tool_schema(t),
+                            read_only=_is_read_only(t),
+                        )
+                    )
+            kept = {id(t) for t in remote}
+            removed: list[Tool] = [t for t in old_remote.values() if id(t) not in kept]
+            previous = {id(t) for t in old_remote.values()}
+            added: list[Tool] = [t for t in remote if id(t) not in previous]
+            self._server_tools[name] = remote + capability
+            if removed or added:
+                self._add_note(
+                    f"MCP server '{name}' changed its tool list ({reason}): added "
+                    f"{', '.join(t.name for t in added) or 'none'}; removed "
+                    f"{', '.join(t.name for t in removed) or 'none'}."
+                )
+                self._emit_tools_changed(name, removed, added)
 
     def _ensure_loop(self) -> None:
         """Start the background event loop, lazily importing `mcp`. Raises if it is missing.
@@ -976,14 +1087,21 @@ class MCPManager:
 
         died = asyncio.Event()
         last_error: list[BaseException] = []
+        this_session: list[Any] = []
 
         async def _on_message(message: Any) -> None:
             if isinstance(message, Exception):
                 # Recorded for the note only — a single malformed line is not a death (see
                 # 12-RESEARCH.md: a real transport drop is observed as end-of-stream, not an
-                # Exception item delivered here). Server notifications stay dropped exactly as
-                # the SDK default does; list_changed routing is MCP-24.
+                # Exception item delivered here).
                 last_error[:] = [message]
+                return
+            if not this_session:
+                return  # before the session is live: the connect path lists tools right after
+            try:
+                await self._on_notification(name, this_session[0], message)
+            except Exception:  # noqa: BLE001 - never raise into the SDK's dispatcher
+                logger.debug("MCP server %r: handling a notification failed", name, exc_info=True)
 
         connected = False
         tools: list[Tool] = []
@@ -1036,6 +1154,7 @@ class MCPManager:
                     raw.strip() if isinstance(raw, str) and raw.strip() else None
                 )
                 self._sessions[name] = session
+                this_session[:] = [session]
                 self._server_tools[name] = tools
                 self._server_state[name] = "connected"
                 connected = True

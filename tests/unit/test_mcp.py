@@ -2180,3 +2180,214 @@ def test_prompt_catalog_feeds_the_system_message(monkeypatch):
         assert tool.spec().parameters == {"type": "object", "properties": {}}
     finally:
         manager.close()
+
+
+# --- Plan 14-04, Task 1: list_changed routes into a guarded, identity-preserving refetch ----- #
+
+
+def test_list_changed_adds_and_removes_tools(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a"), _fake_tool("b")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append(
+            (s, [t.name for t in r], [t.name for t in a])
+        )
+        up.tools[:] = [_fake_tool("a"), _fake_tool("c")]
+        transport.notify(manager, types.ToolListChangedNotification())
+        assert [t.name for t in manager.tools_for("alpha")] == [
+            "mcp__alpha__a",
+            "mcp__alpha__c",
+        ]
+        assert events == [("alpha", ["mcp__alpha__b"], ["mcp__alpha__c"])]
+        assert any(
+            "MCP server 'alpha' changed its tool list" in n and "mcp__alpha__c" in n
+            for n in manager.notes
+        )
+    finally:
+        manager.close()
+
+
+def test_list_changed_keeps_unchanged_tool_identity(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a"), _fake_tool("b")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        a_before = manager.tools_for("alpha")[0]
+        a_before._materialized = True
+        up.tools[:] = [_fake_tool("a"), _fake_tool("b"), _fake_tool("c")]
+        transport.notify(manager, types.ToolListChangedNotification())
+        a_after = manager.tools_for("alpha")[0]
+        assert a_after is a_before
+        assert a_after.materialized is True
+    finally:
+        manager.close()
+
+
+def test_list_changed_replaces_redefined_tool(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append(
+            (s, [t.name for t in r], [t.name for t in a])
+        )
+        a_before = manager.tools_for("alpha")[0]
+        new_schema = {"type": "object", "properties": {"x": {"type": "string"}}}
+        up.tools[:] = [_fake_tool("a", schema=new_schema)]
+        transport.notify(manager, types.ToolListChangedNotification())
+        a_after = manager.tools_for("alpha")[0]
+        assert a_after is not a_before
+        assert events[-1] == ("alpha", ["mcp__alpha__a"], ["mcp__alpha__a"])
+    finally:
+        manager.close()
+
+
+def test_list_changed_no_diff_no_event(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a"), _fake_tool("b")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append((s, r, a))
+        calls_before = transport.list_calls
+        transport.notify(manager, types.ToolListChangedNotification())
+        assert events == []
+        assert transport.list_calls == calls_before + 1
+    finally:
+        manager.close()
+
+
+def test_list_changed_reuses_capability_tools(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    caps = _FakeCaps(resources=_FakeResourcesCap())
+    up = _Up([_fake_tool("a")], caps=caps)
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append(
+            (s, [t.name for t in r], [t.name for t in a])
+        )
+        list_resources_tool = next(
+            t for t in manager.tools_for("alpha") if t.name == "mcp__alpha__list_resources"
+        )
+        up.tools[:] = [_fake_tool("a"), _fake_tool("b")]
+        transport.notify(manager, types.ToolListChangedNotification())
+        after = manager.tools_for("alpha")
+        assert any(t is list_resources_tool for t in after)
+        assert not any("mcp__alpha__list_resources" in added for (_s, _r, added) in events)
+    finally:
+        manager.close()
+
+
+def test_list_changed_resource_and_prompt_siblings_refetch(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append((s, r, a))
+        calls_before = transport.list_calls
+        transport.notify(manager, types.ResourceListChangedNotification())
+        transport.notify(manager, types.PromptListChangedNotification())
+        assert transport.list_calls == calls_before + 2
+        _seq, messages = manager.notes_since(0)
+        assert any("MCP server 'alpha': its resource list changed." in m for m in messages)
+        assert any("MCP server 'alpha': its prompt list changed." in m for m in messages)
+        assert "MCP server 'alpha': its resource list changed." not in manager.notes
+        assert "MCP server 'alpha': its prompt list changed." not in manager.notes
+        assert events == []
+    finally:
+        manager.close()
+
+
+def test_list_changed_racing_stop_does_not_resurrect(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up], list_delay=0.3).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append((s, r, a))
+        up.tools.append(_fake_tool("z"))
+        fut = transport.notify_nowait(manager, types.ToolListChangedNotification())
+        manager.stop_server("alpha")
+        fut.result(timeout=5)
+        assert "alpha" not in manager._server_tools
+        assert manager.tools_for("alpha") == []
+        assert not any(a for (_s, _r, a) in events)
+    finally:
+        manager.close()
+
+
+def test_list_changed_racing_death_does_not_resurrect(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up, ConnectionError("down")], list_delay=0.3).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        up.tools.append(_fake_tool("z"))
+        fut = transport.notify_nowait(manager, types.ToolListChangedNotification())
+        transport.kill(manager)
+        fut.result(timeout=5)
+        assert _wait_until(lambda: "alpha" not in manager._sessions)
+        assert "mcp__alpha__z" not in [t.name for t in manager.tools()]
+    finally:
+        manager.close()
+
+
+def test_list_changed_refetch_failure_is_a_note_not_a_raise(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up]).install(monkeypatch)
+    manager = MCPManager({})
+    events: list = []
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        manager.on_tools_changed = lambda s, r, a: events.append((s, r, a))
+        before = manager.tools_for("alpha")
+        transport.list_error = RuntimeError("list broke")
+        transport.notify(manager, types.ToolListChangedNotification())  # must not raise
+        assert any(
+            "re-listing tools after tools/list_changed failed" in n and "list broke" in n
+            for n in manager.notes
+        )
+        assert manager.tools_for("alpha") == before
+        assert events == []
+    finally:
+        manager.close()
+
+
+def test_list_changed_back_to_back_serialized(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    up = _Up([_fake_tool("a")])
+    transport = _DyingTransport([up], list_delay=0.2).install(monkeypatch)
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        up.tools[:] = [_fake_tool("a"), _fake_tool("b")]
+        fut1 = transport.notify_nowait(manager, types.ToolListChangedNotification())
+        fut2 = transport.notify_nowait(manager, types.ToolListChangedNotification())
+        fut1.result(timeout=5)
+        fut2.result(timeout=5)
+        names = [t.name for t in manager.tools_for("alpha")]
+        assert sorted(names) == ["mcp__alpha__a", "mcp__alpha__b"]
+        assert len(names) == len(set(names))
+    finally:
+        manager.close()
