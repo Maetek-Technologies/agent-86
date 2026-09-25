@@ -50,9 +50,16 @@ class _FakeManager:
 
 def test_mcp_tool_spec_uses_server_schema():
     schema = {"type": "object", "properties": {"x": {"type": "string"}}}
-    tool = MCPTool(_FakeManager(), "srv", "mytool", "does a thing", schema)
+    tool = MCPTool(_FakeManager(result="ok"), "srv", "mytool", "does a thing", schema)
     spec = tool.spec()
     assert spec.name == "mcp__srv__mytool"
+    # ADR 0003: the schema is deferred until first use — a never-called tool advertises the
+    # stub, not the server's real schema.
+    assert spec.parameters == {"type": "object", "properties": {}}
+
+    tool.run(ToolCall(id="1", name=tool.name, arguments={"x": "v"}), ctx=None)
+
+    spec = tool.spec()
     assert spec.parameters["properties"] == {"x": {"type": "string"}}
     assert spec.side_effecting is True  # external effects -> approval-gated
 

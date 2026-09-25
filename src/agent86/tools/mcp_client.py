@@ -108,8 +108,32 @@ class MCPTimeout(TimeoutError):
         self.server = server
 
 
+#: ADR 0003: until first use, an MCP tool advertises its NAME with this stub instead of the
+#: server's schema. It is ToolSpec's own default-empty shape — what every provider adapter
+#: already sends for argument-less tools — so no adapter meets a new wire shape (Pitfall 1).
+_DEFERRED_NOTE = " [argument schema loads on first call]"
+
+
+def _deferred_schema() -> dict[str, Any]:
+    """A fresh stub each call: specs are handed to adapters that may decorate them."""
+    return {"type": "object", "properties": {}}
+
+
+def _missing_required(schema: dict, arguments: Any) -> list[str]:
+    """The schema's ``required`` keys absent from ``arguments``. Never raises."""
+    required = schema.get("required") if isinstance(schema, dict) else None
+    if not isinstance(required, list):
+        return []
+    given = arguments if isinstance(arguments, dict) else {}
+    return [k for k in required if isinstance(k, str) and k not in given]
+
+
 class MCPTool(Tool[EmptyArgs]):
-    """A registry tool backed by a remote MCP server tool."""
+    """A registry tool backed by a remote MCP server tool.
+
+    Per ADR 0003, the tool's NAME is always advertised; its full argument schema is deferred
+    until the first time the harness actually runs it (``materialized`` flips inside ``run()``).
+    """
 
     Args = EmptyArgs  # unused: spec() and run() are overridden (schema comes from the server)
 
@@ -125,24 +149,50 @@ class MCPTool(Tool[EmptyArgs]):
         # read is noise that trains them to approve everything.
         self.side_effecting = not read_only
         self._schema = input_schema or {"type": "object", "properties": {}}
+        #: (raw description, schema, read_only) — compared by 14-04's list_changed re-fetch to
+        #: keep an unchanged tool's object (and its materialised flag) across a re-list.
+        self._definition = (description or "", self._schema, read_only)
+        props = self._schema.get("properties") if isinstance(self._schema, dict) else None
+        # Nothing to defer for a tool that takes no arguments.
+        self._materialized = not props
+
+    @property
+    def materialized(self) -> bool:
+        return self._materialized
 
     def spec(self) -> ToolSpec:
+        if self._materialized:
+            return ToolSpec(
+                name=self.name, description=self.description,
+                parameters=self._schema, side_effecting=self.side_effecting,
+            )
         return ToolSpec(
-            name=self.name, description=self.description,
-            parameters=self._schema, side_effecting=self.side_effecting,
+            name=self.name, description=self.description + _DEFERRED_NOTE,
+            parameters=_deferred_schema(), side_effecting=self.side_effecting,
         )
 
     def execute(self, args: EmptyArgs, ctx: ToolContext) -> ToolResult:  # pragma: no cover
         raise NotImplementedError  # run() is overridden; execute is never called
 
     def run(self, call: ToolCall, ctx: ToolContext) -> ToolResult:
+        first_use = not self._materialized
+        # ADR 0003: materialise synchronously, inside the step that first runs the tool, so the
+        # next request of this same turn advertises (and budgets for) the real schema.
+        self._materialized = True
+        meta: dict[str, Any] = {"schema_materialized": True} if first_use else {}
+        if first_use and (missing := _missing_required(self._schema, call.arguments)):
+            return ToolResult(
+                call_id=call.id, name=self.name, ok=False, metadata=meta,
+                error=(f"{self.name}'s argument schema was deferred and is now loaded into your "
+                       f"tool list; missing required argument(s): {', '.join(missing)}. "
+                       "Call it again with them."),
+            )
         try:
             text = self._manager.call_tool(self._server, self._tool, call.arguments)
         except Exception as exc:
-            return ToolResult(
-                call_id=call.id, name=self.name, ok=False, error=f"MCP call failed: {exc}"
-            )
-        return ToolResult(call_id=call.id, name=self.name, content=text)
+            return ToolResult(call_id=call.id, name=self.name, ok=False,
+                              error=f"MCP call failed: {exc}", metadata=meta)
+        return ToolResult(call_id=call.id, name=self.name, content=text, metadata=meta)
 
 
 _TArgs = TypeVar("_TArgs", bound=BaseModel)
