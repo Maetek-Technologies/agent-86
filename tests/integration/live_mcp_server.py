@@ -14,7 +14,16 @@ immediately before serving, so a lifecycle test can find and kill it mid-session
 ``big_text``, ``tiny_image``, ``tiny_audio``, ``mixed_blocks``) that exercise Phase 13's
 per-server timeouts, the result cap, and real ImageContent/AudioContent/EmbeddedResource/
 ResourceLink content blocks — gated behind the env var so the fixture's default tool set, which
-several tests assert exactly, is unchanged.
+several tests assert exactly, is unchanged. ``AGENT86_LIVE_MCP_NOTIFY_TOOLS=1`` mounts four more
+opt-in tools (``grow_tools``, ``shrink_tools``, ``progress_steps``, ``log_line``) for Phase 14:
+``grow_tools``/``shrink_tools`` mount/unmount a ``dynamic_echo`` tool and announce it with a real
+``notifications/tools/list_changed`` (via ``ServerSession.send_tool_list_changed()``, never the
+``Context`` bus method of the same name, which does not reach a ``2025-11-25`` handshake client —
+see ``14-EVIDENCE.md``), while ``progress_steps``/``log_line`` emit real
+``notifications/progress``/``notifications/message``. ``AGENT86_LIVE_MCP_INSTRUCTIONS``, if set,
+becomes this server's ``InitializeResult.instructions`` (unset means ``None``, byte-identical to
+today). Both are gated so the fixture's default tool set and default instructions, asserted
+exactly by several tests, are unchanged.
 
 Built on ``mcp.server.mcpserver.MCPServer`` — the SDK's own server API since mcp 2.0, which
 serves both transports as ASGI apps over uvicorn. (``mcp.server.fastmcp`` is gone: FastMCP
@@ -24,11 +33,12 @@ moved out of the SDK, which is what left this test permanently skipped.)
 from __future__ import annotations
 
 import base64
+import contextlib
 import os
 import sys
 from pathlib import Path
 
-from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver import Context, MCPServer
 
 #: The two Phase 13 content-block probes (see AGENT86_LIVE_MCP_EXTRA_TOOLS below). Importable by
 #: the test so it can assert their base64 never appears in a rendered marker.
@@ -42,7 +52,10 @@ STYLE_COMPLETIONS = ["concise", "thorough", "security-focused"]
 
 def main() -> None:
     transport, port = sys.argv[1], int(sys.argv[2])
-    mcp = MCPServer("agent86-live-test")
+    mcp = MCPServer(
+        "agent86-live-test",
+        instructions=os.environ.get("AGENT86_LIVE_MCP_INSTRUCTIONS") or None,
+    )
 
     @mcp.tool()
     def add(a: int, b: int) -> int:
@@ -142,6 +155,52 @@ def main() -> None:
                     mime_type="text/plain",
                 ),
             ]
+
+    # Opt-in, test-only (Phase 14): tools that emit real notifications/tools/list_changed,
+    # notifications/progress and notifications/message. Behind an env flag so the default tool
+    # set — asserted exactly by several tests — is unchanged.
+    if os.environ.get("AGENT86_LIVE_MCP_NOTIFY_TOOLS") == "1":
+        import warnings
+
+        @mcp.tool()
+        async def grow_tools(ctx: Context) -> str:
+            """Mount dynamic_echo at runtime and announce it with notifications/tools/list_changed.
+
+            Real: uses ServerSession.send_tool_list_changed(), not the Context bus method.
+            """
+
+            def dynamic_echo(text: str) -> str:
+                """Echo text back — mounted at runtime by grow_tools."""
+                return f"dynamic: {text}"
+
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                mcp.add_tool(dynamic_echo)
+            await ctx.request_context.session.send_tool_list_changed()
+            return "grown"
+
+        @mcp.tool()
+        async def shrink_tools(ctx: Context) -> str:
+            """Unmount dynamic_echo and announce it."""
+            with contextlib.suppress(Exception):
+                mcp.remove_tool("dynamic_echo")
+            await ctx.request_context.session.send_tool_list_changed()
+            return "shrunk"
+
+        @mcp.tool()
+        async def progress_steps(ctx: Context, steps: int = 3) -> str:
+            """Report `steps` progress notifications (only delivered with a progress_callback)."""
+            for i in range(steps):
+                await ctx.report_progress(i + 1, steps, f"step {i + 1}")
+            return f"did {steps} steps"
+
+        @mcp.tool()
+        async def log_line(ctx: Context, text: str) -> str:
+            """Emit one notifications/message at level warning."""
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                await ctx.log("warning", text, logger_name="agent86-live")
+            return "logged"
 
     # Opt-in, test-only: lets a lifecycle test find and kill THIS process mid-session (MCP-26/23).
     # A file, not a tool, so the fixture's tool set — which several tests assert exactly — is
