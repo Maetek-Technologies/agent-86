@@ -275,7 +275,22 @@ on server death rather than race it. No new core dependency; cold-start unaffect
 **Source**: [../docs/mcp-conformance-audit-2026-09.md](../docs/mcp-conformance-audit-2026-09.md)
 § "Recommended phase breakdown" → Proposed Phase 17 (renumbered 14 on promotion); ruling in
 [../docs/adr/0003-mcp-schema-deferral-prompt-contract.md](../docs/adr/0003-mcp-schema-deferral-prompt-contract.md)
-**Plans**: 0 plans
+**Plans**: 6 plans in 5 waves
+
+Plans:
+- [ ] 14-01-PLAN.md — Wave 0: live corpus `instructions` check + SDK notification facts
+  (`14-EVIDENCE.md`), opt-in notification probes in the CI fixture, `_DyingTransport`
+  notification delivery (wave 1)
+- [ ] 14-02-PLAN.md — per-request MCP section in the system message: every callable tool name
+  plus server instructions (ADR 0003), shared with sub-agents (wave 1)
+- [ ] 14-03-PLAN.md — `MCPTool` schema deferral until first execution, instructions capture and
+  `prompt_catalog()`, same-turn budget proof (MCP-20) (wave 2)
+- [ ] 14-04-PLAN.md — `_on_message` routing: `list_changed` re-fetch through Phase 12's sync
+  path, progress (token requested, observed generically), logging, resource updates (MCP-24)
+  (wave 3)
+- [ ] 14-05-PLAN.md — real-stdio proof of SC1-SC3 through a real `Harness` (wave 4)
+- [ ] 14-06-PLAN.md — matrix re-ruling, ARCHITECTURE/CHANGELOG/README, validation sign-off, and
+  human TUI check (wave 5)
 
 Plans:
 - [ ] TBD (run /gsd:plan-phase 14 to break down)
