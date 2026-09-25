@@ -281,7 +281,7 @@ Plans:
 - [ ] 14-01-PLAN.md — Wave 0: live corpus `instructions` check + SDK notification facts
   (`14-EVIDENCE.md`), opt-in notification probes in the CI fixture, `_DyingTransport`
   notification delivery (wave 1)
-- [ ] 14-02-PLAN.md — per-request MCP section in the system message: every callable tool name
+- [x] 14-02-PLAN.md — per-request MCP section in the system message: every callable tool name
   plus server instructions (ADR 0003), shared with sub-agents (wave 1)
 - [ ] 14-03-PLAN.md — `MCPTool` schema deferral until first execution, instructions capture and
   `prompt_catalog()`, same-turn budget proof (MCP-20) (wave 2)
@@ -381,7 +381,7 @@ a non-goal** (`docs/ARCHITECTURE.md` §15). Corpus: `server-everything`, `server
 `mcp-server-git`, the local `live_mcp_server.py` extended to echo its environment, and GitHub's
 hosted remote server for B. Nine matrix rows are already grounded in the BACKLOG entry's audit
 head start — start there, not from the spec.
-**Plans:** 6/6 plans complete
+**Plans:** 1/6 plans executed
 
 ### Phases 999.0b–d: MCP client depth / remote auth / context & lifecycle (BEING PROMOTED)
 
