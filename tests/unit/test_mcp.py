@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import inspect
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import pytest
 
@@ -500,6 +502,7 @@ class _Up:
 
     tools: list
     caps: object | None = None
+    instructions: str | None = None
 
 
 class _DyingTransport:
@@ -512,11 +515,22 @@ class _DyingTransport:
     reaches ``message_handler``, the stream just ends.
     """
 
-    def __init__(self, attempts: list, *, responses: dict | None = None) -> None:
+    def __init__(
+        self,
+        attempts: list,
+        *,
+        responses: dict | None = None,
+        list_delay: float = 0.0,
+    ) -> None:
         self.attempts = attempts
         self.responses = responses
+        self.list_delay = list_delay
         self.connects = 0
         self.list_calls = 0
+        # self.call_kwargs is populated by _Session.call_tool's `**kw` (via the `transport`
+        # closure, not `self` — the inner class always refers to the outer instance that way).
+        self.call_kwargs: list[dict] = []
+        self.list_error: Exception | None = None
         self.senders: list = []
         self.handlers: list = []
         self._current: _Up | None = None
@@ -555,6 +569,7 @@ class _DyingTransport:
                 caps = current.caps if current is not None else None
                 if caps is not None:
                     self.server_capabilities = caps
+                self._instructions = current.instructions if current is not None else None
                 self._reader: asyncio.Future | None = None
 
             async def _drain(self) -> None:
@@ -575,15 +590,20 @@ class _DyingTransport:
                 return False
 
             async def initialize(self):
-                return None
+                return _fake_result(instructions=self._instructions)
 
             async def list_tools(self):
                 transport.list_calls += 1
+                if transport.list_delay:
+                    await asyncio.sleep(transport.list_delay)
+                if transport.list_error is not None:
+                    raise transport.list_error
                 listed = _fake_result()
                 listed.tools = self._tools
                 return listed
 
-            async def call_tool(self, tool, arguments):
+            async def call_tool(self, tool, arguments, **kw):
+                transport.call_kwargs.append(kw)
                 value = (transport.responses or {}).get("call_tool", "ok")
                 if callable(value):
                     value = value(tool, arguments)
@@ -607,6 +627,36 @@ class _DyingTransport:
         """Deliver ``exc`` to the currently-installed ``message_handler``, and wait for it."""
         assert manager._loop is not None
         asyncio.run_coroutine_threadsafe(self.handlers[-1](exc), manager._loop).result(timeout=5)
+
+    def notify(self, manager: MCPManager, notification: Any) -> None:
+        """Deliver ``notification`` (e.g. an ``mcp.types.ToolListChangedNotification()``) to the
+        currently-installed ``message_handler`` on the manager's loop, and wait for the handler to
+        finish (the handler awaits any re-fetch inline)."""
+        assert manager._loop is not None
+        asyncio.run_coroutine_threadsafe(self.handlers[-1](notification), manager._loop).result(
+            timeout=5
+        )
+
+    def notify_nowait(self, manager: MCPManager, notification: Any) -> concurrent.futures.Future:
+        """Like ``notify`` but returns the future instead of waiting — for race tests."""
+        assert manager._loop is not None
+        return asyncio.run_coroutine_threadsafe(self.handlers[-1](notification), manager._loop)
+
+
+def test_dying_transport_notify_reaches_the_handler(monkeypatch):
+    types = pytest.importorskip("mcp.types")
+    transport = _DyingTransport([_Up([_fake_tool("a")], instructions="be nice")]).install(
+        monkeypatch
+    )
+    manager = MCPManager({})
+    try:
+        manager.start_server("alpha", MCPServerConfig(command="x"))
+        transport.notify(manager, types.ToolListChangedNotification())  # must not raise
+        manager.call_tool("alpha", "a", {})
+        assert transport.call_kwargs and isinstance(transport.call_kwargs[-1], dict)
+        assert [t.name for t in manager.tools_for("alpha")] == ["mcp__alpha__a"]
+    finally:
+        manager.close()
 
 
 def test_death_eof_clears_sessions_and_tools(monkeypatch):
