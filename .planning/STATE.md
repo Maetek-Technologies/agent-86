@@ -3,13 +3,13 @@ gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
 status: executing
-last_updated: "2026-09-25T02:36:27.961Z"
+last_updated: "2026-09-25T02:40:10.922Z"
 last_activity: 2026-09-25
 progress:
   total_phases: 5
   completed_phases: 4
   total_plans: 29
-  completed_plans: 24
+  completed_plans: 25
 ---
 
 # Project State
@@ -83,6 +83,38 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 3 — Secrets + Model Config ● 13/13 · 4 — MCP Config UI ● 8/8 · 5 — Packaging & Hardening ● n/a.
 
 ## Recent Activity
+
+- 2026-09-25 — **Plan 14-01 complete (Wave 0 live evidence + test machinery for schema deferral
+  and notification handling, wave 1, no production code touched):** `14-EVIDENCE.md` answers
+  14-RESEARCH.md's Open Question 1 with real data — `server-everything@2026.8.31` sets a
+  substantial `InitializeResult.instructions` string; `server-filesystem@2026.8.31`,
+  `mcp-server-git==2026.8.18` and this repo's own CI fixture (unset) all leave it `None` — so plan
+  14-05 has one real live-corpus citation for SC1's "plus server instructions" clause, not only the
+  CI fixture's synthetic one. Re-verified live against the installed `mcp==2.0.0` SDK all three
+  plan-time corrections to 14-RESEARCH.md: `Context.notify_tools_changed()` never reaches
+  `message_handler` (SEP-2575 bus only); `report_progress` is a true no-op with no
+  `progress_callback` and tees exactly N `ProgressNotification`s with one; `notifications/message`
+  arrives with no `logging/setLevel` ever sent. `tests/integration/live_mcp_server.py` gained
+  opt-in `AGENT86_LIVE_MCP_NOTIFY_TOOLS=1` (`grow_tools`/`shrink_tools` emit a real
+  `notifications/tools/list_changed` via `ServerSession.send_tool_list_changed()`; `progress_steps`/
+  `log_line` emit real progress/logging notifications) and `AGENT86_LIVE_MCP_INSTRUCTIONS`, both
+  gated so the default tool set and instructions stay unchanged (29/29
+  `test_mcp_client.py`/`test_mcp_live.py` still pass). `tests/unit/test_mcp.py`'s `_DyingTransport`
+  gained `notify()`/`notify_nowait()` (deliver an arbitrary SDK notification object to the real
+  installed `message_handler`), per-connection `_Up.instructions`, `list_delay`/`list_error` on
+  `list_tools()`, and `call_kwargs` recorded from `call_tool(**kw)` — the exact machinery plans
+  14-03/14-04 need. One found-and-fixed deviation: the CI fixture's `Context` import had to move
+  from inside the gated block to module top level — with `from __future__ import annotations`, the
+  `@mcp.tool()` decorator evaluates string annotations against the enclosing function's
+  `__globals__` (module scope, not a nested function's locals), so a local import left every gated
+  tool raising `InvalidSignature`/`NameError` at server startup; caught by this task's own
+  hand-verification step before any test was written against it. 105 passed
+  (`pytest tests/unit/test_mcp.py`); 134 passed
+  (`pytest tests/unit/test_mcp.py tests/integration/test_mcp_client.py
+  tests/integration/test_mcp_live.py`); `ruff check .` clean; `git status --porcelain src/` empty
+  throughout — this plan, like Phase 10's audit plans, shipped no production code by design. Ran
+  concurrently with plan 14-02 (MCP prompt-section wiring) in the same shared working tree; no file
+  overlap.
 
 - 2026-09-24 — **Plan 13-06 complete (phase signoff — live after-evidence, docs, and validation
   sign-off, wave 4 — final plan, Phase 13 now 6/6 complete, MCP-21/MCP-22/MCP-25 all closed with
@@ -1269,7 +1301,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 ## Current Position
 
 Phase: 14 (schema-deferral-and-notification-handling) — EXECUTING
-Plan: 2 of 6
+Plan: 3 of 6
 Status: Ready to execute
 2026-09-24, next is `/gsd:plan-phase 14`); phases 15+ remain unwritten by design, promoted one at
 a time via `/gsd:add-phase`
