@@ -692,6 +692,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 | 260922-hwc | Correct the Ollama `num_ctx` hardware facts — reference box is a 24 GB RX 7900 XTX, not an iGPU | 2026-09-22 | 9069684 | Verified | [260922-hwc-correct-ollama-num-ctx-hardware-facts](./quick/260922-hwc-correct-ollama-num-ctx-hardware-facts/) |
 | 260922-bnr | Startup banner in the TUI, from one shared definition | 2026-09-22 | aa22c77 | | [260922-bnr-startup-banner-in-the-tui-shared-source](./quick/260922-bnr-startup-banner-in-the-tui-shared-source/) |
 | 260922-axx | Rebrand the startup banner — `agent86` as the panel title, `version` as a label row | 2026-09-22 | d19a9f5 | | [260922-axx-rebrand-the-startup-banner-agent86-as-th](./quick/260922-axx-rebrand-the-startup-banner-agent86-as-th/) |
+| 261009-rh9 | Discover OpenRouter model context windows from the /models API | 2026-10-09 | 92ee395 | | [261009-rh9-discover-openrouter-model-context-window](./quick/261009-rh9-discover-openrouter-model-context-window/) |
 
 - 2026-08-13 — Quick task 260813-adr complete: fixed the TUI `/model` catalog picker dispatching a
   broken ref for every provider (reported via the Ollama entry `nemotron-3.5-lightning:latest`
@@ -813,6 +814,19 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
   `cli.py`'s `--help` text, `__init__.py`'s docstring and `cognitive/prompt.py`'s system prompt
   still say "agentic harness" — they describe the package and the prompt, not the splash, and
   were deliberately left. Full suite green: **1241 passed**, 14 deselected; ruff and mypy clean.
+
+- 2026-10-09 — Quick task 261009-rh9 complete: `context_window_for` now asks OpenRouter for the
+  real window instead of guessing from the model name (`openrouter:qwen/qwen3.7-max` had matched
+  the generic `qwen` row, 32,768; OpenRouter reports 1,000,000). New
+  `cognitive/remote_windows.py` reads `context_length` from `GET {base_url}/models` for the
+  `openrouter` section or any openrouter.ai `base_url`: per-process memo (failures memoized too),
+  24h disk cache at `~/.agent86/cache/model_context_windows.json` (stale-on-failure), 3s timeout,
+  key via `resolve_api_key` and never persisted. Order: `[model.context_window]` override →
+  OpenRouter → ollama/llamacpp rules → name table → 8192. Every failure falls through silently.
+  An autouse conftest fixture keeps tests offline and off `~/.agent86`. Suite: 1231 passed,
+  16 skipped, 1 failed — `tests/tui/test_banner.py::test_compact_banner_is_the_identity_core_only`,
+  which fails identically at 273d1fa (pre-existing, not caused by this task); ruff check and mypy
+  clean.
 
 ## Next Step
 
