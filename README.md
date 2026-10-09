@@ -416,6 +416,7 @@ and the span that no longer fits is summarized instead of forgotten.
 | Source | What it gives | Notes |
 |---|---|---|
 | `[model.context_window]` | your explicit override | looked up by full `provider:model` ref, then bare model id |
+| OpenRouter's `/models` `context_length` | the real window for `openrouter:` refs (or any `base_url` on openrouter.ai) | memoized per process, cached 24h in `~/.agent86/cache/model_context_windows.json`, 3s timeout; offline or unlisted models fall through silently. Works without a key; a key, if present, is resolved env-then-keyring and never stored |
 | the **provider**, where the server owns the window | `ollama` → `[providers.ollama] num_ctx`; `llamacpp` → 8192 | llama.cpp's `-c` isn't discoverable over the API, so guessing 128k from `llama3.1` would hand the budget a number the server truncates |
 | the built-in family table | Claude 4.x/5.x **200k**; `gpt-5` 400k, `gpt-4.1` 1,047,576, `gpt-4o` 128k, o-series 200k; common open-weights ids (llama-3.x 131,072, qwen/mixtral/mistral 32,768, gemma 8,192, phi 16,384) | matched as a substring of the model id |
 | the default | **8192** | the smallest window any modern model ships with |

@@ -6,6 +6,14 @@ All notable changes to agent86 are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **OpenRouter models budget against their real context window.** `openrouter:qwen/qwen3.7-max`
+  used to match the generic `qwen` row and be budgeted at 32,768 tokens. The window now comes from
+  the `context_length` OpenRouter's `/models` endpoint reports, after any `[model.context_window]`
+  override. It is memoized per process and cached 24h under `~/.agent86/cache`; offline, on an
+  HTTP error, or for a model OpenRouter does not list, it falls back silently to the old table.
+
 ### Changed
 
 - **Development Status classifier is now `5 - Production/Stable`.** 1.0.0 is published on PyPI
