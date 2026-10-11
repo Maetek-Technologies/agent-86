@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v1.1
 milestone_name: MCP Integration Depth
-status: verifying
-last_updated: "2026-09-25T12:48:54.282Z"
-last_activity: 2026-09-25
+status: executing
+last_updated: "2026-09-25T13:23:23.619Z"
+last_activity: 2026-09-25 -- Phase 15 execution started
 progress:
-  total_phases: 5
+  total_phases: 6
   completed_phases: 5
-  total_plans: 29
+  total_plans: 36
   completed_plans: 29
 ---
 
@@ -23,7 +23,7 @@ safe to hand to someone else, and the promises a script depends on are written d
 — on top of v0.9's "usable for code", v0.8's "the context window and the token budget are spent
 well", v0.7's "what the harness reports is true", and v0.6's "run, configure and steer the agent
 entirely from the terminal app".
-**Current focus:** Phase 15 — connect to GitHub's hosted server and implement OAuth 2.0
+**Current focus:** Phase 15 — Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization
 discovery/authorization (MCP-17, workstream B) — added 2026-09-25, not yet planned. Phase 14 is
 complete and verified (6/6 plans, 2026-09-25).
 Phase 10 is the MCP conformance audit (the promoted 999.0a): audit-only, no implementation, three
@@ -1457,12 +1457,12 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 
 ## Current Position
 
-Phase: 15
-Plan: Not started
-Status: Phase 15 added (2026-09-25), not yet planned — next is `/gsd:plan-phase 15`; later
+Phase: 15 (Connect to GitHub's hosted server and implement OAuth 2.0 discovery/authorization) — EXECUTING
+Plan: 1 of 7
+Status: Executing Phase 15
 workstream-B phases (MCP-18/MCP-19) remain unwritten by design, promoted one at a time via
 `/gsd:add-phase`
-Last activity: 2026-09-25
+Last activity: 2026-09-25 -- Phase 15 execution started
 
 ## Next Step
 
