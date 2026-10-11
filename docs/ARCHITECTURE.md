@@ -389,7 +389,7 @@ class ModelProvider(ABC):
 **Per-model facts** (`capabilities.py`) — the seam every provider and the loop ask, so a per-model
 quirk lives in one declarative table rather than scattered conditionals. It answers three
 questions: whether a model still accepts `temperature`/`top_p`/`top_k` (some families removed them
-and return 400), `context_window_for(model_ref, config)` (§8), and
+and return 400), `context_window_for(model_ref, config)` (§8; override, then OpenRouter-reported, then provider/table), and
 `max_output_tokens_for(model_ref, config)` — `[providers.<name>] max_tokens`, else
 `[limits] max_output_tokens`.
 
@@ -652,7 +652,10 @@ conversation      = window − (system prompt + tool schemas)
 ```
 
 The **window** resolves in priority order: a `[model.context_window]` override (full
-`provider:model` ref, then bare id) → the *provider* where the server rather than the model owns
+`provider:model` ref, then bare id) → for OpenRouter (section `openrouter`, or any `base_url` on
+openrouter.ai) the `context_length` its `/models` endpoint reports, memoized per process and cached
+24h in `~/.agent86/cache/model_context_windows.json` (3s timeout; any failure, or a model absent
+from the list, falls through silently; a stale cache is used if a refresh fails) → the *provider* where the server rather than the model owns
 the window (Ollama serves `[providers.ollama] num_ctx`; llama.cpp's `-c` is a launch flag not
 discoverable over the API, so 8192 is the only honest answer) → a built-in family table (Claude
 4.x/5.x 200k; `gpt-5` 400k, `gpt-4.1` 1,047,576, `gpt-4o` 128k, o-series 200k; common open-weights

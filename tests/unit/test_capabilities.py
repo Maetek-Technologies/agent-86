@@ -64,9 +64,7 @@ def test_apply_sampling_params_none_means_no_value():
 
 
 def test_apply_sampling_params_includes_top_p_and_top_k_when_supported():
-    result = capabilities.apply_sampling_params(
-        {}, "gpt-4o", temperature=0.5, top_p=0.9, top_k=40
-    )
+    result = capabilities.apply_sampling_params({}, "gpt-4o", temperature=0.5, top_p=0.9, top_k=40)
     assert result == {"temperature": 0.5, "top_p": 0.9, "top_k": 40}
 
 
@@ -157,3 +155,33 @@ def test_max_output_tokens_precedence():
     assert out("anthropic:claude-opus-4-8", cfg) == 2048
     # A provider with no block of its own falls back to the limits default.
     assert out("mystery:model-x", cfg) == 8192
+
+
+def test_context_window_priority_override_discovered_table(monkeypatch):
+    import agent86.cognitive.remote_windows as rw
+
+    cfg = _cfg()
+    calls = []
+
+    def stub(base_url, api_key):
+        calls.append(base_url)
+        return {"qwen/qwen3.7-max": 262144}
+
+    monkeypatch.setattr(rw, "_fetch_context_lengths", stub)
+    ref = "openrouter:qwen/qwen3.7-max"
+    assert capabilities.context_window_for(ref, cfg) == 262144
+    cfg.model.context_window = {ref: 50_000}
+    assert capabilities.context_window_for(ref, cfg) == 50_000
+    cfg.model.context_window = {}
+    assert capabilities.context_window_for("openrouter:qwen/unknown", cfg) == 32_768
+
+
+def test_context_window_non_openrouter_never_fetches(monkeypatch):
+    import agent86.cognitive.remote_windows as rw
+
+    cfg = _cfg()
+    calls = []
+    monkeypatch.setattr(rw, "_fetch_context_lengths", lambda b, k: calls.append(b) or {})
+    for ref in ("ollama:qwen2.5:3b", "llamacpp:x", "qwen2.5", "openai:gpt-4o"):
+        capabilities.context_window_for(ref, cfg)
+    assert calls == []

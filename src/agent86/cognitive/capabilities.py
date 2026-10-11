@@ -74,9 +74,7 @@ def mark_sampling_unsupported(model: str) -> None:
 def is_sampling_rejection(message: str) -> bool:
     """True when an API error text says a sampling parameter was refused."""
     low = message.lower()
-    return any(p in low for p in SAMPLING_PARAMS) and any(
-        w in low for w in _REJECTION_WORDS
-    )
+    return any(p in low for p in SAMPLING_PARAMS) and any(w in low for w in _REJECTION_WORDS)
 
 
 def apply_sampling_params(
@@ -149,14 +147,16 @@ def context_window_for(model_ref: str, config: Config) -> int:
 
     1. ``[model.context_window]`` — an explicit user override, looked up by the full
        ``provider:model`` ref first and then by the bare model id.
-    2. The provider, where the *server* owns the window rather than the model: Ollama serves
+    2. OpenRouter's own ``context_length`` from its ``/models`` endpoint (memoized per
+       process, cached 24h under ``~/.agent86/cache``); any failure falls through silently.
+    3. The provider, where the *server* owns the window rather than the model: Ollama serves
        whatever ``[providers.ollama] num_ctx`` asks for, and llama.cpp whatever it was
        launched with — neither is knowable from the model name, so guessing 128k from
        "llama3.1" would hand the budget a number the server will truncate.
-    3. :data:`_CONTEXT_WINDOWS`, matched as a substring of the model id.
-    4. :data:`DEFAULT_CONTEXT_WINDOW`.
+    4. :data:`_CONTEXT_WINDOWS`, matched as a substring of the model id.
+    5. :data:`DEFAULT_CONTEXT_WINDOW`.
 
-    ``model_ref`` may be a bare model id; then only steps 1, 3 and 4 apply.
+    ``model_ref`` may be a bare model id; then only steps 1, 4 and 5 apply.
     """
     ref = str(model_ref)
     provider, _, model = ref.partition(":")
@@ -168,6 +168,16 @@ def context_window_for(model_ref: str, config: Config) -> int:
         override = overrides.get(key)
         if override:
             return int(override)
+
+    if provider:
+        try:
+            from agent86.cognitive.remote_windows import openrouter_context_window
+
+            discovered = openrouter_context_window(provider, model, config)
+        except Exception:  # noqa: BLE001 - discovery must never break the lookup
+            discovered = None
+        if discovered:
+            return discovered
 
     if provider == "ollama":
         pconf = config.providers.get("ollama")

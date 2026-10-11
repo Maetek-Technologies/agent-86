@@ -77,6 +77,11 @@ All notable changes to agent86 are documented here. The format follows
   rather than inherited straight to the terminal, so it can be read back into that failure note
   — a behaviour change for anyone who previously watched a stdio MCP server's own stderr scroll
   past in the console.
+- **OpenRouter models budget against their real context window.** `openrouter:qwen/qwen3.7-max`
+  used to match the generic `qwen` row and be budgeted at 32,768 tokens. The window now comes from
+  the `context_length` OpenRouter's `/models` endpoint reports, after any `[model.context_window]`
+  override. It is memoized per process and cached 24h under `~/.agent86/cache`; offline, on an
+  HTTP error, or for a model OpenRouter does not list, it falls back silently to the old table.
 
 ### Changed
 

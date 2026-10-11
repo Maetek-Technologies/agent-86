@@ -43,9 +43,9 @@ def _v1(base_url: str) -> str:
     return base + ("" if base.endswith("/v1") else "/v1")
 
 
-def _get_json(url: str, headers: dict[str, str]) -> dict:
+def _get_json(url: str, headers: dict[str, str], timeout: float = _TIMEOUT_S) -> dict:
     try:
-        resp = httpx.get(url, headers=headers, timeout=_TIMEOUT_S)
+        resp = httpx.get(url, headers=headers, timeout=timeout)
         resp.raise_for_status()
         return resp.json()
     except Exception as exc:  # noqa: BLE001 - httpx errors, JSON errors, all fall back the same
@@ -61,6 +61,30 @@ def fetch_openai_compatible(base_url: str, api_key: str | None) -> list[tuple[st
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     data = _get_json(_v1(base_url) + "/models", headers).get("data", [])
     return [(m["id"], m.get("name") or m["id"]) for m in data if isinstance(m, dict) and "id" in m]
+
+
+def fetch_openai_compatible_context_lengths(
+    base_url: str, api_key: str | None, timeout: float = 3.0
+) -> dict[str, int]:
+    """Map lowercased model id -> ``context_length`` from an OpenRouter-style ``/models`` list.
+
+    Entries without a positive numeric ``context_length`` are skipped. Raises
+    :class:`CatalogUnavailable` when the list cannot be fetched.
+    """
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    data = _get_json(_v1(base_url) + "/models", headers, timeout=timeout).get("data", [])
+    out: dict[str, int] = {}
+    if not isinstance(data, list):
+        return out
+    for m in data:
+        if not isinstance(m, dict) or not isinstance(m.get("id"), str):
+            continue
+        raw = m.get("context_length")
+        if isinstance(raw, bool) or not isinstance(raw, int | float):
+            continue
+        if raw > 0:
+            out[m["id"].lower()] = int(raw)
+    return out
 
 
 def fetch_anthropic(api_key: str | None) -> list[tuple[str, str]]:
@@ -96,9 +120,7 @@ def fetch_catalog(
             "llama.cpp / LM Studio expose no model list -- enter provider:model directly."
         )
     elif provider == "openai" or pconf.base_url:
-        entries = fetch_openai_compatible(
-            pconf.base_url or "https://api.openai.com/v1", api_key
-        )
+        entries = fetch_openai_compatible(pconf.base_url or "https://api.openai.com/v1", api_key)
     else:
         raise CatalogUnavailable(
             f"Provider '{provider}' has no base_url configured, so its model list cannot be "
@@ -113,6 +135,7 @@ __all__ = [
     "CatalogUnavailable",
     "fetch_catalog",
     "fetch_openai_compatible",
+    "fetch_openai_compatible_context_lengths",
     "fetch_anthropic",
     "fetch_ollama",
 ]
