@@ -73,6 +73,8 @@ async def _run_tool_turn(app, pilot, repl, line: str = "write it") -> None:
 
 def test_compact_banner_is_the_identity_core_only():
     cfg = load_config()
+    # Pin a neutral model: the user's real default (e.g. "openrouter:...") can contain "router".
+    cfg.model.default = "ollama:qwen2.5"
     text = _render(banner(cfg, compact=True))
 
     assert f"version  {__version__}" in text
