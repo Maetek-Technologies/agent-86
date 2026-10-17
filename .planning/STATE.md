@@ -1296,6 +1296,7 @@ v0.6 (closed): 1 — TUI Skeleton + Live Status ● 5/5 · 2 — Command Palette
 | 260922-axx | Rebrand the startup banner — `agent86` as the panel title, `version` as a label row | 2026-09-22 | d19a9f5 | | [260922-axx-rebrand-the-startup-banner-agent86-as-th](./quick/260922-axx-rebrand-the-startup-banner-agent86-as-th/) |
 | 261009-rh9 | Discover OpenRouter model context windows from the /models API | 2026-10-09 | 92ee395 | | [261009-rh9-discover-openrouter-model-context-window](./quick/261009-rh9-discover-openrouter-model-context-window/) |
 | 261011-7p9 | Merge origin/master (OpenRouter context windows) into local master and push | 2026-10-11 | d2a07a8 | | [261011-7p9-merge-origin-master-openrouter-context-w](./quick/261011-7p9-merge-origin-master-openrouter-context-w/) |
+| fast | Pin a neutral model in the compact-banner test (user config leaked "openrouter") | 2026-10-16 | 5b462c8 | ✅ | — |
 
 - 2026-08-13 — Quick task 260813-adr complete: fixed the TUI `/model` catalog picker dispatching a
   broken ref for every provider (reported via the Ollama entry `nemotron-3.5-lightning:latest`
